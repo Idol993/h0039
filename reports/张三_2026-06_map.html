@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_8e651e8d14f7f51b39906e5124085fd0 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
+        
+</head>
+<body>
+    
+    
+        <div style="
+            position: fixed;
+            bottom: 12px;
+            left: 12px;
+            z-index: 9999;
+            background-color: rgba(255,255,255,0.95);
+            padding: 10px 14px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            font-size: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        ">
+            <div style="font-weight:bold;margin-bottom:6px;">🗺️ 轨迹图说明</div>
+            <div>🟢 起点 / 🔴 终点 / 🔵 停留点</div>
+            <div style="margin-top:4px;">实线 = 实际轨迹，虚线 = 推荐路线</div>
+            <div style="margin-top:4px;color:#e67e22;">黄色虚线 = 偏差>20%（疑似绕路）</div>
+        </div>
+        
+    
+            <div class="folium-map" id="map_8e651e8d14f7f51b39906e5124085fd0" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_8e651e8d14f7f51b39906e5124085fd0 = L.map(
+                "map_8e651e8d14f7f51b39906e5124085fd0",
+                {
+                    center: [39.673566986301374, 116.66813880136988],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  "zoom": 11,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_0239081bdafd092b53a34fe5e6fce15d = L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 19,
+  "maxNativeZoom": 19,
+  "noWrap": false,
+  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_0239081bdafd092b53a34fe5e6fce15d.addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var poly_line_774d7b1b3cb28baaeaf7b27c66b90ae9 = L.polyline(
+                [[39.9042, 116.4074], [39.9058, 116.4092], [39.9075, 116.4112], [39.9092, 116.4133], [39.911, 116.4155], [39.9128, 116.4178], [39.9147, 116.4201], [39.9166, 116.4225], [39.9185, 116.425], [39.9205, 116.4276], [39.9225, 116.4303], [39.9246, 116.4331], [39.9267, 116.436], [39.9289, 116.439], [39.9311, 116.4421], [39.9334, 116.4453], [39.9357, 116.4486], [39.9381, 116.452], [39.9405, 116.4555], [39.943, 116.4591], [39.9456, 116.4628], [39.9482, 116.4666], [39.9509, 116.4705], [39.9536, 116.4745], [39.9564, 116.4786], [39.9592, 116.4828]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.85, "smoothFactor": 1.0, "stroke": true, "weight": 4}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            poly_line_774d7b1b3cb28baaeaf7b27c66b90ae9.bindTooltip(
+                `<div>
+                     第1段 · 8.9km · 行驶25分0秒
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var marker_131d889aff21c484521384f7caa76255 = L.marker(
+                [39.9042, 116.4074],
+                {
+}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var icon_69795ba28ba43968b9f40edd869daded = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "green",
+  "iconColor": "white",
+  "icon": "play",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_35d6e816609323e1a0d365615856fd1f = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_e3a8b9ce35be5da8efffceec4c2a37db = $(`<div id="html_e3a8b9ce35be5da8efffceec4c2a37db" style="width: 100.0%; height: 100.0%;">起点<br>时间: 00:00:00<br>第1段</div>`)[0];
+                popup_35d6e816609323e1a0d365615856fd1f.setContent(html_e3a8b9ce35be5da8efffceec4c2a37db);
+            
+        
+
+        marker_131d889aff21c484521384f7caa76255.bindPopup(popup_35d6e816609323e1a0d365615856fd1f)
+        ;
+
+        
+    
+    
+                marker_131d889aff21c484521384f7caa76255.setIcon(icon_69795ba28ba43968b9f40edd869daded);
+            
+    
+            var marker_0b619383f3b4f73fa1a516a2b7a32f2b = L.marker(
+                [39.9592, 116.4828],
+                {
+}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var icon_bd47fc5ae88f25fd18889a37b4f52eac = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "red",
+  "iconColor": "white",
+  "icon": "flag",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_0e63025380a012a4eb91267fb3e38dda = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_714e4bae7aea2fec4e7287836de61682 = $(`<div id="html_714e4bae7aea2fec4e7287836de61682" style="width: 100.0%; height: 100.0%;">终点<br>时间: 00:25:00<br>里程: 8.88km</div>`)[0];
+                popup_0e63025380a012a4eb91267fb3e38dda.setContent(html_714e4bae7aea2fec4e7287836de61682);
+            
+        
+
+        marker_0b619383f3b4f73fa1a516a2b7a32f2b.bindPopup(popup_0e63025380a012a4eb91267fb3e38dda)
+        ;
+
+        
+    
+    
+                marker_0b619383f3b4f73fa1a516a2b7a32f2b.setIcon(icon_bd47fc5ae88f25fd18889a37b4f52eac);
+            
+    
+            var poly_line_cdff88f44d8dfed437503b99352398aa = L.polyline(
+                [[39.9593, 116.4829], [39.95928, 116.48292], [39.95926, 116.48289], [39.95931, 116.48291], [39.95929, 116.48288], [39.958, 116.485], [39.956, 116.489], [39.9535, 116.4935], [39.9505, 116.4985], [39.947, 116.504], [39.943, 116.51], [39.9385, 116.5165], [39.9335, 116.5235], [39.928, 116.531], [39.922, 116.539], [39.9155, 116.5475], [39.9085, 116.5565], [39.901, 116.566], [39.893, 116.576], [39.8845, 116.5865], [39.8755, 116.5975], [39.866, 116.609], [39.856, 116.621], [39.8455, 116.6335], [39.8345, 116.6465], [39.823, 116.66], [39.811, 116.674], [39.7985, 116.6885], [39.7855, 116.7035], [39.772, 116.719], [39.758, 116.735], [39.7435, 116.7515], [39.7285, 116.7685], [39.713, 116.786], [39.697, 116.804], [39.6805, 116.8225], [39.6635, 116.8415], [39.646, 116.861], [39.628, 116.881], [39.6095, 116.9015], [39.5905, 116.9225], [39.571, 116.944], [39.551, 116.966], [39.5305, 116.9885], [39.5238, 116.6994]],
+                {"bubblingMouseEvents": true, "color": "#3498db", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#3498db", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.85, "smoothFactor": 1.0, "stroke": true, "weight": 4}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            poly_line_cdff88f44d8dfed437503b99352398aa.bindTooltip(
+                `<div>
+                     第2段 · 89.3km · 行驶41分0秒
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var marker_1ddcfdf48925b5f09b202593099e9ec7 = L.marker(
+                [39.9593, 116.4829],
+                {
+}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var icon_f4e61bca332fbd209ed64da63ab01628 = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "green",
+  "iconColor": "white",
+  "icon": "play",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_59c4df700a8bf23d0dfe23b569003852 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_d618e06340654c795e34f0ec8970b933 = $(`<div id="html_d618e06340654c795e34f0ec8970b933" style="width: 100.0%; height: 100.0%;">起点<br>时间: 00:26:00<br>第2段</div>`)[0];
+                popup_59c4df700a8bf23d0dfe23b569003852.setContent(html_d618e06340654c795e34f0ec8970b933);
+            
+        
+
+        marker_1ddcfdf48925b5f09b202593099e9ec7.bindPopup(popup_59c4df700a8bf23d0dfe23b569003852)
+        ;
+
+        
+    
+    
+                marker_1ddcfdf48925b5f09b202593099e9ec7.setIcon(icon_f4e61bca332fbd209ed64da63ab01628);
+            
+    
+            var marker_045686c28c8df393ef3f807d84177171 = L.marker(
+                [39.5238, 116.6994],
+                {
+}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var icon_3f2b520d1b575223c2fd25a4c9aac4fe = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "red",
+  "iconColor": "white",
+  "icon": "flag",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_169cc1ab82e13189330eedcd6900d741 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_3a1b2e9e41f1d78572f1ef958a3a3cf8 = $(`<div id="html_3a1b2e9e41f1d78572f1ef958a3a3cf8" style="width: 100.0%; height: 100.0%;">终点<br>时间: 01:25:00<br>里程: 89.35km</div>`)[0];
+                popup_169cc1ab82e13189330eedcd6900d741.setContent(html_3a1b2e9e41f1d78572f1ef958a3a3cf8);
+            
+        
+
+        marker_045686c28c8df393ef3f807d84177171.bindPopup(popup_169cc1ab82e13189330eedcd6900d741)
+        ;
+
+        
+    
+    
+                marker_045686c28c8df393ef3f807d84177171.setIcon(icon_3f2b520d1b575223c2fd25a4c9aac4fe);
+            
+    
+            var circle_marker_f6b742fd67292ca5c88734991480ccfb = L.circleMarker(
+                [39.959288, 116.4829],
+                {"bubblingMouseEvents": true, "color": "#3498db", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#3498db", "fillOpacity": 0.5, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 3}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+        var popup_6150fe0404a1150e44c92319c4a0b0bf = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_f933aa7f083644a977eee14e1e92844f = $(`<div id="html_f933aa7f083644a977eee14e1e92844f" style="width: 100.0%; height: 100.0%;">停留/办事<br>时长: 18分0秒<br>00:26 - 00:44</div>`)[0];
+                popup_6150fe0404a1150e44c92319c4a0b0bf.setContent(html_f933aa7f083644a977eee14e1e92844f);
+            
+        
+
+        circle_marker_f6b742fd67292ca5c88734991480ccfb.bindPopup(popup_6150fe0404a1150e44c92319c4a0b0bf)
+        ;
+
+        
+    
+    
+            var poly_line_6b480dc78ef55295325b59b1370ddf46 = L.polyline(
+                [[39.5238, 116.6994], [39.52382, 116.69943], [39.52381, 116.69941], [39.52379, 116.69939], [39.523805, 116.699415], [39.5238, 116.6994], [39.523815, 116.69942], [39.521, 116.705], [39.516, 116.718], [39.51, 116.732], [39.503, 116.747], [39.495, 116.763], [39.486, 116.78], [39.476, 116.798], [39.465, 116.817], [39.453, 116.837], [39.44, 116.858], [39.426, 116.88], [39.411, 116.903], [39.395, 116.927], [39.378, 116.952], [39.36, 116.978], [39.341, 117.005], [39.321, 117.033]],
+                {"bubblingMouseEvents": true, "color": "#2ecc71", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#2ecc71", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.85, "smoothFactor": 1.0, "stroke": true, "weight": 4}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            poly_line_6b480dc78ef55295325b59b1370ddf46.bindTooltip(
+                `<div>
+                     第3段 · 36.6km · 行驶17分0秒
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var marker_9738f16fba7acb793b8e0f507caf6683 = L.marker(
+                [39.5238, 116.6994],
+                {
+}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var icon_a3af8e05231ad73fa02b45fcf8288bfd = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "green",
+  "iconColor": "white",
+  "icon": "play",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_75dfb4940c2f03d450f7e2709af1f60f = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_3d13f19c0f743dc839bf4ecfe68eb9df = $(`<div id="html_3d13f19c0f743dc839bf4ecfe68eb9df" style="width: 100.0%; height: 100.0%;">起点<br>时间: 01:30:00<br>第3段</div>`)[0];
+                popup_75dfb4940c2f03d450f7e2709af1f60f.setContent(html_3d13f19c0f743dc839bf4ecfe68eb9df);
+            
+        
+
+        marker_9738f16fba7acb793b8e0f507caf6683.bindPopup(popup_75dfb4940c2f03d450f7e2709af1f60f)
+        ;
+
+        
+    
+    
+                marker_9738f16fba7acb793b8e0f507caf6683.setIcon(icon_a3af8e05231ad73fa02b45fcf8288bfd);
+            
+    
+            var marker_a5c07a42fcb9928ecae3302fc6b5db4e = L.marker(
+                [39.321, 117.033],
+                {
+}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var icon_f6e626b13e874259c7fe27579ddc8ec6 = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "red",
+  "iconColor": "white",
+  "icon": "flag",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_f34f15efa29cf640421c09e8fde3b19f = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_45fc916819ea11f7c6290ea168e1a13a = $(`<div id="html_45fc916819ea11f7c6290ea168e1a13a" style="width: 100.0%; height: 100.0%;">终点<br>时间: 02:46:00<br>里程: 36.61km</div>`)[0];
+                popup_f34f15efa29cf640421c09e8fde3b19f.setContent(html_45fc916819ea11f7c6290ea168e1a13a);
+            
+        
+
+        marker_a5c07a42fcb9928ecae3302fc6b5db4e.bindPopup(popup_f34f15efa29cf640421c09e8fde3b19f)
+        ;
+
+        
+    
+    
+                marker_a5c07a42fcb9928ecae3302fc6b5db4e.setIcon(icon_f6e626b13e874259c7fe27579ddc8ec6);
+            
+    
+            var circle_marker_5b4620710ae7a0dcddd294eda212dc5f = L.circleMarker(
+                [39.52380571428572, 116.69940928571428],
+                {"bubblingMouseEvents": true, "color": "#3498db", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#3498db", "fillOpacity": 0.5, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 3}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+        var popup_c68e31a96726b2c543c2d5fb093c4d57 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_e5d69cd1e4ae030d76c29d819fc5dcf7 = $(`<div id="html_e5d69cd1e4ae030d76c29d819fc5dcf7" style="width: 100.0%; height: 100.0%;">停留/办事<br>时长: 59分0秒<br>01:30 - 02:29</div>`)[0];
+                popup_c68e31a96726b2c543c2d5fb093c4d57.setContent(html_e5d69cd1e4ae030d76c29d819fc5dcf7);
+            
+        
+
+        circle_marker_5b4620710ae7a0dcddd294eda212dc5f.bindPopup(popup_c68e31a96726b2c543c2d5fb093c4d57)
+        ;
+
+        
+    
+    
+            var poly_line_91e06b66886502b1f6b5849576ae8c6e = L.polyline(
+                [[39.142, 117.201], [39.158, 117.182], [39.174, 117.163], [39.19, 117.144], [39.206, 117.125], [39.222, 117.106], [39.238, 117.087], [39.254, 117.068], [39.27, 117.049], [39.286, 117.03], [39.302, 117.011], [39.318, 116.992], [39.334, 116.973], [39.35, 116.954], [39.366, 116.935], [39.382, 116.916], [39.398, 116.897], [39.414, 116.878], [39.43, 116.859], [39.446, 116.84], [39.462, 116.821], [39.478, 116.802], [39.494, 116.783], [39.51, 116.764], [39.5238, 116.6994]],
+                {"bubblingMouseEvents": true, "color": "#f39c12", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#f39c12", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.85, "smoothFactor": 1.0, "stroke": true, "weight": 4}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            poly_line_91e06b66886502b1f6b5849576ae8c6e.bindTooltip(
+                `<div>
+                     第1段 · 61.3km · 行驶48分0秒
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var marker_a6e983b49de497a9b84efb65baf0a494 = L.marker(
+                [39.142, 117.201],
+                {
+}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var icon_d67a42f223d1c9421c55c70ea751d2ba = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "green",
+  "iconColor": "white",
+  "icon": "play",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_e2c5b799d5878b9aaf9b54c14f2e78b7 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_a213de47d6e59cc450208be4b5523454 = $(`<div id="html_a213de47d6e59cc450208be4b5523454" style="width: 100.0%; height: 100.0%;">起点<br>时间: 01:00:00<br>第1段</div>`)[0];
+                popup_e2c5b799d5878b9aaf9b54c14f2e78b7.setContent(html_a213de47d6e59cc450208be4b5523454);
+            
+        
+
+        marker_a6e983b49de497a9b84efb65baf0a494.bindPopup(popup_e2c5b799d5878b9aaf9b54c14f2e78b7)
+        ;
+
+        
+    
+    
+                marker_a6e983b49de497a9b84efb65baf0a494.setIcon(icon_d67a42f223d1c9421c55c70ea751d2ba);
+            
+    
+            var marker_13667eb0b531e93c0f86b2e4901a5c12 = L.marker(
+                [39.5238, 116.6994],
+                {
+}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var icon_9a00108032f259501615676a30e00929 = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "red",
+  "iconColor": "white",
+  "icon": "flag",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_481010bab5931fd390a616ee33ce6bcb = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_73019f8bc0fa300dcb4b4018e22cd70c = $(`<div id="html_73019f8bc0fa300dcb4b4018e22cd70c" style="width: 100.0%; height: 100.0%;">终点<br>时间: 01:48:00<br>里程: 61.34km</div>`)[0];
+                popup_481010bab5931fd390a616ee33ce6bcb.setContent(html_73019f8bc0fa300dcb4b4018e22cd70c);
+            
+        
+
+        marker_13667eb0b531e93c0f86b2e4901a5c12.bindPopup(popup_481010bab5931fd390a616ee33ce6bcb)
+        ;
+
+        
+    
+    
+                marker_13667eb0b531e93c0f86b2e4901a5c12.setIcon(icon_9a00108032f259501615676a30e00929);
+            
+    
+            var poly_line_2dfa39d474dfa605100a9f5f84022c45 = L.polyline(
+                [[39.52381, 116.69941], [39.5238, 116.6994], [39.52379, 116.69939], [39.54, 116.68], [39.556, 116.661], [39.572, 116.642], [39.588, 116.623], [39.604, 116.604], [39.62, 116.585], [39.636, 116.566], [39.652, 116.547], [39.668, 116.528], [39.684, 116.509], [39.7, 116.49], [39.716, 116.471], [39.732, 116.452], [39.748, 116.433], [39.764, 116.414], [39.78, 116.395], [39.796, 116.376], [39.812, 116.357], [39.828, 116.338], [39.844, 116.319], [39.86, 116.3], [39.876, 116.281], [39.892, 116.262]],
+                {"bubblingMouseEvents": true, "color": "#9b59b6", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#9b59b6", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.85, "smoothFactor": 1.0, "stroke": true, "weight": 4}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            poly_line_2dfa39d474dfa605100a9f5f84022c45.bindTooltip(
+                `<div>
+                     第2段 · 55.5km · 行驶46分0秒
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var marker_290bb0d4431f423079079c7124cb9ca9 = L.marker(
+                [39.52381, 116.69941],
+                {
+}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var icon_0c8abede0cd277d65c7780dc7487c5d8 = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "green",
+  "iconColor": "white",
+  "icon": "play",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_162f09a9b2bfc884c6714551a4f80aa2 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_516708d175ed6af6b36994797fc6e41d = $(`<div id="html_516708d175ed6af6b36994797fc6e41d" style="width: 100.0%; height: 100.0%;">起点<br>时间: 01:55:00<br>第2段</div>`)[0];
+                popup_162f09a9b2bfc884c6714551a4f80aa2.setContent(html_516708d175ed6af6b36994797fc6e41d);
+            
+        
+
+        marker_290bb0d4431f423079079c7124cb9ca9.bindPopup(popup_162f09a9b2bfc884c6714551a4f80aa2)
+        ;
+
+        
+    
+    
+                marker_290bb0d4431f423079079c7124cb9ca9.setIcon(icon_0c8abede0cd277d65c7780dc7487c5d8);
+            
+    
+            var marker_cc2233e8bd79d696cfa6bbf07b34f1c1 = L.marker(
+                [39.892, 116.262],
+                {
+}
+            ).addTo(map_8e651e8d14f7f51b39906e5124085fd0);
+        
+    
+            var icon_09f2608ac005b829adb85f7626cf6fb4 = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "red",
+  "iconColor": "white",
+  "icon": "flag",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_a9fec6091cf4fdf32bba0b0cb68a25a1 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_becb02fac9eae7426f9121ca461feabc = $(`<div id="html_becb02fac9eae7426f9121ca461feabc" style="width: 100.0%; height: 100.0%;">终点<br>时间: 02:54:00<br>里程: 55.49km</div>`)[0];
+                popup_a9fec6091cf4fdf32bba0b0cb68a25a1.setContent(html_becb02fac9eae7426f9121ca461feabc);
+            
+        
+
+        marker_cc2233e8bd79d696cfa6bbf07b34f1c1.bindPopup(popup_a9fec6091cf4fdf32bba0b0cb68a25a1)
+        ;
+
+        
+    
+    
+                marker_cc2233e8bd79d696cfa6bbf07b34f1c1.setIcon(icon_09f2608ac005b829adb85f7626cf6fb4);
+            
+</script>
+</html>

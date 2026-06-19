@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,6 +25,9 @@ console = Console()
 
 COMPLIANCE_DISTANCE_KM = 300.0
 ROUTE_DEVIATION_THRESHOLD = 0.20
+OSRM_MAX_RETRIES = 3
+OSRM_RETRY_DELAY = 1.5
+OSRM_CACHE_TTL = 86400 * 30
 
 DEFAULT_OSRM_BASE = "https://router.project-osrm.org"
 
@@ -35,9 +40,12 @@ class RouteComparison:
     deviation_percent: float
     is_detour: bool
     recommended_route_polyline: Optional[str] = None
+    verified: bool = True
 
     @property
     def status_label(self) -> str:
+        if not self.verified:
+            return "⚠️ 未核验(网络不可用)"
         if self.is_detour:
             return "⚠️ 疑似绕路"
         return "✓ 路线正常"
@@ -91,13 +99,56 @@ def _coord_label(coord: Optional[Tuple[float, float]]) -> str:
 
 
 class RouteComparator:
-    def __init__(self, osrm_base: str = DEFAULT_OSRM_BASE, timeout: int = 15):
+    def __init__(self, osrm_base: str = DEFAULT_OSRM_BASE, timeout: int = 15,
+                 cache_dir: Optional[str] = None):
         self.osrm_base = osrm_base.rstrip("/")
         self.timeout = timeout
+        self.cache_dir: Optional[Path] = None
+        if cache_dir:
+            self.cache_dir = Path(cache_dir)
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._memory_cache: Dict[str, Dict] = {}
+
+    def _cache_key(self, coords: List[Tuple[float, float]]) -> str:
+        flat = "|".join(f"{lat:.5f},{lon:.5f}" for lat, lon in coords)
+        return hashlib.sha1((self.osrm_base + "|" + flat).encode("utf-8")).hexdigest()
+
+    def _cache_get(self, key: str) -> Optional[Dict]:
+        if key in self._memory_cache:
+            entry = self._memory_cache[key]
+            if time.time() - entry["ts"] < OSRM_CACHE_TTL:
+                return entry["data"]
+        if self.cache_dir is not None:
+            fp = self.cache_dir / f"osrm_{key}.json"
+            if fp.exists():
+                try:
+                    entry = json.loads(fp.read_text(encoding="utf-8"))
+                    if time.time() - entry["ts"] < OSRM_CACHE_TTL:
+                        self._memory_cache[key] = entry
+                        return entry["data"]
+                except Exception:
+                    pass
+        return None
+
+    def _cache_put(self, key: str, data: Dict) -> None:
+        entry = {"ts": time.time(), "data": data}
+        self._memory_cache[key] = entry
+        if self.cache_dir is not None:
+            try:
+                (self.cache_dir / f"osrm_{key}.json").write_text(
+                    json.dumps(entry, ensure_ascii=False), encoding="utf-8"
+                )
+            except Exception:
+                pass
 
     def _query_route(self, coords: List[Tuple[float, float]]) -> Optional[Dict]:
         if len(coords) < 2:
             return None
+        key = self._cache_key(coords)
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+
         coord_str = ";".join(f"{lon:.6f},{lat:.6f}" for lat, lon in coords)
         url = f"{self.osrm_base}/route/v1/driving/{coord_str}"
         params = {
@@ -105,43 +156,62 @@ class RouteComparator:
             "geometries": "polyline",
             "steps": "false",
         }
-        try:
-            resp = requests.get(url, params=params, timeout=self.timeout)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("code") == "Ok" and data.get("routes"):
-                    return data["routes"][0]
-        except requests.RequestException as e:
-            console.print(f"[yellow]OSRM请求失败: {e}[/yellow]")
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, OSRM_MAX_RETRIES + 1):
+            try:
+                resp = requests.get(url, params=params, timeout=self.timeout)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == "Ok" and data.get("routes"):
+                        result = data["routes"][0]
+                        self._cache_put(key, result)
+                        return result
+                    elif resp.status_code == 429 or 500 <= resp.status_code < 600:
+                        raise RuntimeError(f"HTTP {resp.status_code}")
+                    else:
+                        return None
+            except requests.RequestException as e:
+                last_exc = e
+            except Exception as e:
+                last_exc = e
+            if attempt < OSRM_MAX_RETRIES:
+                time.sleep(OSRM_RETRY_DELAY * attempt)
+
+        if last_exc:
+            console.print(f"[yellow]OSRM请求失败(已重试{OSRM_MAX_RETRIES}次): {last_exc}[/yellow]")
         return None
 
-    def compare_segment(self, segment: TripSegment) -> Optional[RouteComparison]:
+    def compare_segment(self, segment: TripSegment) -> RouteComparison:
+        actual_km = segment.moving_distance_km if segment.moving_distance_km > 0 else segment.total_distance_km
+
+        fallback_unknown = RouteComparison(
+            segment_id=segment.segment_id,
+            actual_distance_km=actual_km,
+            recommended_distance_km=0.0,
+            deviation_percent=0.0,
+            is_detour=False,
+            recommended_route_polyline=None,
+            verified=False,
+        )
+
         if len(segment.points) < 2:
-            return None
+            return fallback_unknown
 
         start = segment.points[0].coord
         end = segment.points[-1].coord
 
-        waypoints = [start]
-        if len(segment.points) >= 4:
-            mid_idx = len(segment.points) // 2
-            waypoints.append(segment.points[mid_idx].coord)
-        waypoints.append(end)
-
-        route_info = self._query_route(waypoints)
+        route_info = self._query_route([start, end])
         if not route_info:
-            return None
+            return fallback_unknown
 
         recommended_distance_m = route_info.get("distance", 0.0)
         recommended_km = recommended_distance_m / 1000.0
-        actual_km = segment.total_distance_km
 
         if recommended_km <= 0:
-            return None
+            return fallback_unknown
 
         deviation = (actual_km - recommended_km) / recommended_km
         is_detour = deviation > ROUTE_DEVIATION_THRESHOLD
-
         polyline_str = route_info.get("geometry")
 
         return RouteComparison(
@@ -151,21 +221,21 @@ class RouteComparator:
             deviation_percent=deviation * 100,
             is_detour=is_detour,
             recommended_route_polyline=polyline_str,
+            verified=True,
         )
 
     def compare_trip(self, result: TripResult) -> List[RouteComparison]:
         comparisons: List[RouteComparison] = []
         for seg in result.segments:
-            comp = self.compare_segment(seg)
-            if comp:
-                comparisons.append(comp)
+            comparisons.append(self.compare_segment(seg))
         return comparisons
 
 
 class Reporter:
-    def __init__(self, verbose: bool = False, osrm_base: str = DEFAULT_OSRM_BASE):
+    def __init__(self, verbose: bool = False, osrm_base: str = DEFAULT_OSRM_BASE,
+                 cache_dir: Optional[str] = None):
         self.verbose = verbose
-        self.route_comparator = RouteComparator(osrm_base=osrm_base)
+        self.route_comparator = RouteComparator(osrm_base=osrm_base, cache_dir=cache_dir)
         self._template_env = None
 
     def _get_template_env(self) -> jinja2.Environment:
@@ -195,7 +265,7 @@ class Reporter:
 
     def build_segment_reports(
         self, trip: TripResult, check_route: bool = True
-    ) -> List[SegmentReport]:
+    ) -> Tuple[List[SegmentReport], List[StayPoint]]:
         route_comps: Dict[int, RouteComparison] = {}
         if check_route:
             if self.verbose:
@@ -209,14 +279,16 @@ class Reporter:
         for seg in trip.segments:
             date_str = seg.start_time.strftime("%Y-%m-%d") if seg.start_time else "N/A"
             status, warn = self._check_compliance(seg)
+            moving_dur = seg.moving_time
+            avg_speed = seg.avg_speed_kmh
             r = SegmentReport(
                 segment=seg,
                 date=date_str,
                 start_coord_label=_coord_label(seg.start_point),
                 end_coord_label=_coord_label(seg.end_point),
-                distance_km=seg.total_distance_km,
-                duration=seg.duration,
-                avg_speed_kmh=seg.avg_speed_kmh,
+                distance_km=seg.moving_distance_km if seg.moving_distance_km > 0 else seg.total_distance_km,
+                duration=moving_dur,
+                avg_speed_kmh=avg_speed,
                 route_check=route_comps.get(seg.segment_id),
                 compliance_status=status,
                 compliance_warning=warn,
@@ -241,28 +313,25 @@ class Reporter:
 
         first_time: Optional[datetime] = None
         last_time: Optional[datetime] = None
-        total_moving_seconds = 0.0
+        total_moving = timedelta(0)
 
         for trip in trips:
             seg_reports, stays = self.build_segment_reports(trip, check_route=check_route)
             all_seg_reports.extend(seg_reports)
             all_stays.extend(stays)
-            total_dist += trip.total_distance_km
+            total_dist += sum(
+                (s.moving_distance_km if s.moving_distance_km > 0 else s.total_distance_km)
+                for s in trip.segments
+            )
 
             for seg in trip.segments:
-                max_single = max(max_single, seg.total_distance_km)
+                seg_dist = seg.moving_distance_km if seg.moving_distance_km > 0 else seg.total_distance_km
+                max_single = max(max_single, seg_dist)
+                total_moving += seg.moving_time
                 if seg.start_time:
                     first_time = min(first_time, seg.start_time) if first_time else seg.start_time
                 if seg.end_time:
                     last_time = max(last_time, seg.end_time) if last_time else seg.end_time
-                for p in seg.points:
-                    if not p.is_stop and p.speed_kmh >= STOP_SPEED_DISPLAY:
-                        time_s = 0
-                        idx = seg.points.index(p)
-                        if idx > 0:
-                            prev = seg.points[idx - 1]
-                            time_s = (p.time - prev.time).total_seconds()
-                        total_moving_seconds += time_s
 
         for sr in all_seg_reports:
             if sr.compliance_warning:
@@ -276,7 +345,6 @@ class Reporter:
             date_range = f"{first_time.strftime('%Y-%m-%d')} ~ {last_time.strftime('%Y-%m-%d')}"
 
         total_duration = (last_time - first_time) if (first_time and last_time) else timedelta(0)
-        total_moving = timedelta(seconds=int(total_moving_seconds))
 
         return FullReport(
             employee_name=name,
@@ -328,6 +396,18 @@ class Reporter:
         rows = []
         for idx, sr in enumerate(report.segments):
             seg = sr.segment
+            if sr.route_check and sr.route_check.verified:
+                rec_dist = f"{sr.route_check.recommended_distance_km:.2f}"
+                dev_pct = f"{sr.route_check.deviation_percent:.1f}"
+                route_status = sr.route_check.status_label
+            elif sr.route_check and not sr.route_check.verified:
+                rec_dist = ""
+                dev_pct = ""
+                route_status = "未核验(网络不可用)"
+            else:
+                rec_dist = ""
+                dev_pct = ""
+                route_status = ""
             rows.append({
                 "序号": idx + 1,
                 "日期": sr.date,
@@ -338,12 +418,12 @@ class Reporter:
                 "里程(km)": f"{sr.distance_km:.2f}",
                 "开始时间": seg.start_time.strftime("%Y-%m-%d %H:%M:%S") if seg.start_time else "",
                 "结束时间": seg.end_time.strftime("%Y-%m-%d %H:%M:%S") if seg.end_time else "",
-                "时长": _format_timedelta(sr.duration),
+                "行驶时长": _format_timedelta(sr.duration),
                 "平均速度(km/h)": f"{sr.avg_speed_kmh:.1f}",
                 "合规状态": sr.compliance_status,
-                "最短路线(km)": f"{sr.route_check.recommended_distance_km:.2f}" if sr.route_check else "",
-                "偏差(%)": f"{sr.route_check.deviation_percent:.1f}" if sr.route_check else "",
-                "路线状态": sr.route_check.status_label if sr.route_check else "",
+                "最短路线(km)": rec_dist,
+                "偏差(%)": dev_pct,
+                "路线状态": route_status,
                 "员工": report.employee_name,
             })
         p = Path(output_path)
@@ -418,13 +498,22 @@ class Reporter:
                 if not seg.points:
                     continue
 
-                latlons = [[p.latitude, p.longitude] for p in seg.points]
+                MAX_MAP_POINTS = 500
+                if len(seg.points) > MAX_MAP_POINTS:
+                    step = max(1, len(seg.points) // MAX_MAP_POINTS)
+                    sampled = seg.points[::step]
+                    if sampled[-1] is not seg.points[-1]:
+                        sampled.append(seg.points[-1])
+                else:
+                    sampled = seg.points
+                latlons = [[p.latitude, p.longitude] for p in sampled]
+                seg_display_km = seg.moving_distance_km if seg.moving_distance_km > 0 else seg.total_distance_km
                 folium.PolyLine(
                     locations=latlons,
                     color=color,
                     weight=4,
                     opacity=0.85,
-                    tooltip=f"第{seg.segment_id + 1}段 · {seg.total_distance_km:.1f}km · {_format_timedelta(seg.duration)}",
+                    tooltip=f"第{seg.segment_id + 1}段 · {seg_display_km:.1f}km · 行驶{_format_timedelta(seg.moving_time)}",
                 ).add_to(m)
 
                 sp = seg.points[0]
