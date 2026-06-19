@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="TripLog Test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>张三-20260616-返程.gpx</name>
+    <time>2026-06-16T09:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>返程 2026-06-16</name>
+    <trkseg>
+      <trkpt lat="39.142000" lon="117.201000"><ele>5.0</ele><time>2026-06-16T01:00:00Z</time></trkpt>
+      <trkpt lat="39.158000" lon="117.182000"><ele>7.0</ele><time>2026-06-16T01:02:00Z</time></trkpt>
+      <trkpt lat="39.174000" lon="117.163000"><ele>10.0</ele><time>2026-06-16T01:04:00Z</time></trkpt>
+      <trkpt lat="39.190000" lon="117.144000"><ele>13.0</ele><time>2026-06-16T01:06:00Z</time></trkpt>
+      <trkpt lat="39.206000" lon="117.125000"><ele>17.0</ele><time>2026-06-16T01:08:00Z</time></trkpt>
+      <trkpt lat="39.222000" lon="117.106000"><ele>21.0</ele><time>2026-06-16T01:10:00Z</time></trkpt>
+      <trkpt lat="39.238000" lon="117.087000"><ele>25.0</ele><time>2026-06-16T01:12:00Z</time></trkpt>
+      <trkpt lat="39.254000" lon="117.068000"><ele>30.0</ele><time>2026-06-16T01:14:00Z</time></trkpt>
+      <trkpt lat="39.270000" lon="117.049000"><ele>35.0</ele><time>2026-06-16T01:16:00Z</time></trkpt>
+      <trkpt lat="39.286000" lon="117.030000"><ele>40.0</ele><time>2026-06-16T01:18:00Z</time></trkpt>
+      <trkpt lat="39.302000" lon="117.011000"><ele>46.0</ele><time>2026-06-16T01:20:00Z</time></trkpt>
+      <trkpt lat="39.318000" lon="116.992000"><ele>52.0</ele><time>2026-06-16T01:22:00Z</time></trkpt>
+      <trkpt lat="39.334000" lon="116.973000"><ele>58.0</ele><time>2026-06-16T01:24:00Z</time></trkpt>
+      <trkpt lat="39.350000" lon="116.954000"><ele>65.0</ele><time>2026-06-16T01:26:00Z</time></trkpt>
+      <trkpt lat="39.366000" lon="116.935000"><ele>72.0</ele><time>2026-06-16T01:28:00Z</time></trkpt>
+      <trkpt lat="39.382000" lon="116.916000"><ele>79.0</ele><time>2026-06-16T01:30:00Z</time></trkpt>
+      <trkpt lat="39.398000" lon="116.897000"><ele>87.0</ele><time>2026-06-16T01:32:00Z</time></trkpt>
+      <trkpt lat="39.414000" lon="116.878000"><ele>95.0</ele><time>2026-06-16T01:34:00Z</time></trkpt>
+      <trkpt lat="39.430000" lon="116.859000"><ele>103.0</ele><time>2026-06-16T01:36:00Z</time></trkpt>
+      <trkpt lat="39.446000" lon="116.840000"><ele>112.0</ele><time>2026-06-16T01:38:00Z</time></trkpt>
+      <trkpt lat="39.462000" lon="116.821000"><ele>121.0</ele><time>2026-06-16T01:40:00Z</time></trkpt>
+      <trkpt lat="39.478000" lon="116.802000"><ele>130.0</ele><time>2026-06-16T01:42:00Z</time></trkpt>
+      <trkpt lat="39.494000" lon="116.783000"><ele>140.0</ele><time>2026-06-16T01:44:00Z</time></trkpt>
+      <trkpt lat="39.510000" lon="116.764000"><ele>150.0</ele><time>2026-06-16T01:46:00Z</time></trkpt>
+      <trkpt lat="39.523800" lon="116.699400"><ele>160.0</ele><time>2026-06-16T01:48:00Z</time></trkpt>
+      <!-- 停留: 服务区休息 20分钟 -->
+      <trkpt lat="39.523810" lon="116.699410"><ele>160.0</ele><time>2026-06-16T01:55:00Z</time></trkpt>
+      <trkpt lat="39.523800" lon="116.699400"><ele>160.0</ele><time>2026-06-16T02:05:00Z</time></trkpt>
+      <trkpt lat="39.523790" lon="116.699390"><ele>160.0</ele><time>2026-06-16T02:08:00Z</time></trkpt>
+      <!-- 继续返程 -->
+      <trkpt lat="39.540000" lon="116.680000"><ele>155.0</ele><time>2026-06-16T02:10:00Z</time></trkpt>
+      <trkpt lat="39.556000" lon="116.661000"><ele>150.0</ele><time>2026-06-16T02:12:00Z</time></trkpt>
+      <trkpt lat="39.572000" lon="116.642000"><ele>145.0</ele><time>2026-06-16T02:14:00Z</time></trkpt>
+      <trkpt lat="39.588000" lon="116.623000"><ele>140.0</ele><time>2026-06-16T02:16:00Z</time></trkpt>
+      <trkpt lat="39.604000" lon="116.604000"><ele>135.0</ele><time>2026-06-16T02:18:00Z</time></trkpt>
+      <trkpt lat="39.620000" lon="116.585000"><ele>130.0</ele><time>2026-06-16T02:20:00Z</time></trkpt>
+      <trkpt lat="39.636000" lon="116.566000"><ele>125.0</ele><time>2026-06-16T02:22:00Z</time></trkpt>
+      <trkpt lat="39.652000" lon="116.547000"><ele>120.0</ele><time>2026-06-16T02:24:00Z</time></trkpt>
+      <trkpt lat="39.668000" lon="116.528000"><ele>115.0</ele><time>2026-06-16T02:26:00Z</time></trkpt>
+      <trkpt lat="39.684000" lon="116.509000"><ele>110.0</ele><time>2026-06-16T02:28:00Z</time></trkpt>
+      <trkpt lat="39.700000" lon="116.490000"><ele>105.0</ele><time>2026-06-16T02:30:00Z</time></trkpt>
+      <trkpt lat="39.716000" lon="116.471000"><ele>100.0</ele><time>2026-06-16T02:32:00Z</time></trkpt>
+      <trkpt lat="39.732000" lon="116.452000"><ele>95.0</ele><time>2026-06-16T02:34:00Z</time></trkpt>
+      <trkpt lat="39.748000" lon="116.433000"><ele>90.0</ele><time>2026-06-16T02:36:00Z</time></trkpt>
+      <trkpt lat="39.764000" lon="116.414000"><ele>85.0</ele><time>2026-06-16T02:38:00Z</time></trkpt>
+      <trkpt lat="39.780000" lon="116.395000"><ele>80.0</ele><time>2026-06-16T02:40:00Z</time></trkpt>
+      <trkpt lat="39.796000" lon="116.376000"><ele>75.0</ele><time>2026-06-16T02:42:00Z</time></trkpt>
+      <trkpt lat="39.812000" lon="116.357000"><ele>70.0</ele><time>2026-06-16T02:44:00Z</time></trkpt>
+      <trkpt lat="39.828000" lon="116.338000"><ele>65.0</ele><time>2026-06-16T02:46:00Z</time></trkpt>
+      <trkpt lat="39.844000" lon="116.319000"><ele>60.0</ele><time>2026-06-16T02:48:00Z</time></trkpt>
+      <trkpt lat="39.860000" lon="116.300000"><ele>55.0</ele><time>2026-06-16T02:50:00Z</time></trkpt>
+      <trkpt lat="39.876000" lon="116.281000"><ele>50.0</ele><time>2026-06-16T02:52:00Z</time></trkpt>
+      <trkpt lat="39.892000" lon="116.262000"><ele>45.0</ele><time>2026-06-16T02:54:00Z</time></trkpt>
+      <trkpt lat="39.904200" lon="116.407400"><ele>42.0</ele><time>2026-06-16T02:56:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

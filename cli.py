@@ -1,0 +1,453 @@
+from __future__ import annotations
+
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
+
+import click
+from rich.console import Console
+from rich.panel import Panel
+
+from trip_parser import TripParser, TripResult
+from reporter import Reporter, FullReport
+
+console = Console()
+
+DEFAULT_OSRM = "https://router.project-osrm.org"
+
+
+def _month_filter(results: List[TripResult], month: Optional[str]) -> List[TripResult]:
+    if not month:
+        return results
+    try:
+        year, mon = month.split("-")
+        target_ym = (int(year), int(mon))
+    except Exception:
+        raise click.BadParameter("月份格式错误，请使用 YYYY-MM 格式，例如 2026-06")
+
+    def _match(r: TripResult) -> bool:
+        for seg in r.segments:
+            if seg.start_time and (seg.start_time.year, seg.start_time.month) == target_ym:
+                return True
+        return False
+
+    return [r for r in results if _match(r)]
+
+
+@click.group(
+    context_settings={"help_option_names": ["-h", "--help"]},
+    invoke_without_command=True,
+)
+@click.version_option("0.1.0", prog_name="triplog")
+@click.pass_context
+def cli(ctx: click.Context) -> None:
+    """GPS轨迹解析与员工出差行程报告生成工具 (TripLog)
+
+    支持GPX轨迹解析、行程段切分、合规检查、路线对比、批量处理、报告导出等功能。
+    """
+    if ctx.invoked_subcommand is None:
+        banner = Panel.fit(
+            "[bold cyan]TripLog[/bold cyan] - GPS轨迹解析 & 员工出差行程报告工具\n\n"
+            "[dim]使用 [cyan]triplog --help[/cyan] 查看所有命令\n"
+            "常用命令:[/dim]\n"
+            "  [green]triplog parse[/green]    解析单个GPX文件并生成报告\n"
+            "  [green]triplog report[/green]   根据解析结果生成报告\n"
+            "  [green]triplog map[/green]      生成交互式轨迹地图\n"
+            "  [green]triplog batch[/green]    批量处理目录下所有GPX文件\n"
+            "  [green]triplog export[/green]   导出数据为CSV",
+            title="TripLog v0.1.0",
+            border_style="cyan",
+        )
+        console.print(banner)
+
+
+@cli.command("parse")
+@click.argument("gpx_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--employee-name", "-e", default="", help="员工姓名，将显示在报告抬头")
+@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), help="输出报告文件 (.md/.html/.pdf)")
+@click.option("--format", "-f", "fmt", type=click.Choice(["md", "markdown", "html", "pdf", "console"]), default="console", help="输出格式 (默认: console)")
+@click.option("--check-route/--no-check-route", default=True, help="是否调用OSRM对比最短路线 (默认开启)")
+@click.option("--osrm", default=DEFAULT_OSRM, help="自定义OSRM服务地址")
+@click.option("--verbose", "-v", is_flag=True, help="显示详细日志")
+@click.option("--csv", type=click.Path(dir_okay=False, path_type=Path), help="同时导出CSV (财务用)")
+def parse_cmd(
+    gpx_file: Path,
+    employee_name: str,
+    output: Optional[Path],
+    fmt: str,
+    check_route: bool,
+    osrm: str,
+    verbose: bool,
+    csv: Optional[Path],
+) -> None:
+    """解析单个GPX文件，提取行程段并生成报告。
+
+    GPX_FILE: GPX轨迹文件路径 (支持标准GPX 1.1格式)
+
+    示例:
+      triplog parse trip.gpx -e "张三" -o report.md
+      triplog parse trip.gpx -f html -o report.html --no-check-route
+    """
+    try:
+        parser = TripParser(verbose=verbose)
+        result = parser.parse(str(gpx_file), employee_name=employee_name)
+
+        reporter = Reporter(verbose=verbose, osrm_base=osrm)
+        report = reporter.build_full_report([result], employee_name=employee_name, check_route=check_route)
+
+        _dispatch_output(reporter, report, [result], output, fmt, csv)
+
+    except Exception as e:
+        console.print(f"[bold red]❌ 解析失败:[/bold red] {e}")
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command("report")
+@click.argument("gpx_files", nargs=-1, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--dir", "-d", "gpx_dir", type=click.Path(exists=True, file_okay=False, path_type=Path), help="指定目录批量解析GPX文件")
+@click.option("--employee-name", "-e", default="", help="员工姓名，将显示在报告抬头")
+@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), help="输出报告文件 (.md/.html/.pdf)")
+@click.option("--format", "-f", "fmt", type=click.Choice(["md", "markdown", "html", "pdf", "console"]), default="console", help="输出格式 (默认: console)")
+@click.option("--month", default="", help="仅处理指定月份 (格式: YYYY-MM，如 2026-06)")
+@click.option("--check-route/--no-check-route", default=True, help="是否调用OSRM对比最短路线")
+@click.option("--osrm", default=DEFAULT_OSRM, help="自定义OSRM服务地址")
+@click.option("--verbose", "-v", is_flag=True, help="显示详细日志")
+@click.option("--csv", type=click.Path(dir_okay=False, path_type=Path), help="导出报销CSV")
+@click.option("--points-csv", type=click.Path(dir_okay=False, path_type=Path), help="导出全部轨迹点CSV")
+def report_cmd(
+    gpx_files: tuple,
+    gpx_dir: Optional[Path],
+    employee_name: str,
+    output: Optional[Path],
+    fmt: str,
+    month: str,
+    check_route: bool,
+    osrm: str,
+    verbose: bool,
+    csv: Optional[Path],
+    points_csv: Optional[Path],
+) -> None:
+    """根据一个或多个GPX文件生成完整的行程报告。
+
+    示例:
+      triplog report trip1.gpx trip2.gpx -e "李四" -f md -o monthly.md --month 2026-06
+      triplog report -d ./gpx_files/ -e "王五" --pdf -o report.pdf
+    """
+    try:
+        parser = TripParser(verbose=verbose)
+        results: List[TripResult] = []
+
+        if gpx_dir:
+            if verbose:
+                console.print(f"[dim]扫描目录: {gpx_dir}[/dim]")
+            results.extend(parser.parse_directory(str(gpx_dir), employee_name=employee_name))
+
+        for gf in gpx_files:
+            results.append(parser.parse(str(gf), employee_name=employee_name))
+
+        if not results:
+            console.print("[yellow]未找到任何有效的GPX数据[/yellow]")
+            sys.exit(0)
+
+        if month:
+            results = _month_filter(results, month)
+            if not results:
+                console.print(f"[yellow]月份 {month} 内无任何行程数据[/yellow]")
+                sys.exit(0)
+
+        title = "员工出差月度行程报告" if month else "员工出差行程报告"
+
+        reporter = Reporter(verbose=verbose, osrm_base=osrm)
+        report = reporter.build_full_report(results, employee_name=employee_name, report_title=title, check_route=check_route)
+
+        _dispatch_output(reporter, report, results, output, fmt, csv, points_csv)
+
+    except Exception as e:
+        console.print(f"[bold red]❌ 生成报告失败:[/bold red] {e}")
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command("map")
+@click.argument("gpx_files", nargs=-1, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--dir", "-d", "gpx_dir", type=click.Path(exists=True, file_okay=False, path_type=Path), help="指定目录批量解析")
+@click.option("--employee-name", "-e", default="", help="员工姓名")
+@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), default=Path("trip_map.html"), help="输出HTML地图路径 (默认: trip_map.html)")
+@click.option("--with-route/--no-route", default=True, help="是否叠加OSRM推荐路线")
+@click.option("--osrm", default=DEFAULT_OSRM, help="自定义OSRM服务地址")
+@click.option("--verbose", "-v", is_flag=True, help="显示详细日志")
+def map_cmd(
+    gpx_files: tuple,
+    gpx_dir: Optional[Path],
+    employee_name: str,
+    output: Path,
+    with_route: bool,
+    osrm: str,
+    verbose: bool,
+) -> None:
+    """生成交互式轨迹可视化地图 (HTML格式，基于folium/OpenStreetMap)。
+
+    地图特性:
+      · 每段行程不同颜色标识
+      · 🟢起点 / 🔴终点 / 🔵停留点标记
+      · 推荐路线虚线叠加 (需开启 --with-route)
+      · 支持鼠标拖拽和缩放
+
+    示例:
+      triplog map trip.gpx -o map.html
+      triplog map -d ./gpx/ -e "赵六" --no-route
+    """
+    try:
+        parser = TripParser(verbose=verbose)
+        results: List[TripResult] = []
+
+        if gpx_dir:
+            results.extend(parser.parse_directory(str(gpx_dir), employee_name=employee_name))
+        for gf in gpx_files:
+            results.append(parser.parse(str(gf), employee_name=employee_name))
+
+        if not results:
+            console.print("[yellow]未找到任何有效的GPX数据[/yellow]")
+            sys.exit(0)
+
+        reporter = Reporter(verbose=verbose, osrm_base=osrm)
+        report = None
+        if with_route:
+            report = reporter.build_full_report(results, employee_name=employee_name, check_route=True)
+        out_path = reporter.generate_map(results, str(output), report=report)
+
+        console.print(f"[bold green]✅ 地图已生成:[/bold green] {out_path}")
+        console.print(f"[dim]提示: 在浏览器中打开该文件查看交互式地图[/dim]")
+
+    except Exception as e:
+        console.print(f"[bold red]❌ 生成地图失败:[/bold red] {e}")
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command("batch")
+@click.argument("input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--output-dir", "-o", type=click.Path(file_okay=False, path_type=Path), default=Path("./reports"), help="输出目录 (默认: ./reports)")
+@click.option("--employee-name", "-e", default="", help="员工姓名")
+@click.option("--month", default="", help="仅处理指定月份 (格式: YYYY-MM)")
+@click.option("--formats", "-f", default="md,html,csv", help="输出格式组合 (逗号分隔，默认 md,html,csv)")
+@click.option("--check-route/--no-check-route", default=True, help="是否调用OSRM对比最短路线")
+@click.option("--with-map/--no-map", default=True, help="是否同时生成交互式地图")
+@click.option("--osrm", default=DEFAULT_OSRM, help="自定义OSRM服务地址")
+@click.option("--verbose", "-v", is_flag=True, help="显示详细日志")
+def batch_cmd(
+    input_dir: Path,
+    output_dir: Path,
+    employee_name: str,
+    month: str,
+    formats: str,
+    check_route: bool,
+    with_map: bool,
+    osrm: str,
+    verbose: bool,
+) -> None:
+    """批量处理目录下所有GPX文件，按员工和日期聚合生成报告。
+
+    INPUT_DIR: 存放GPX文件的目录 (支持递归查找 *.gpx)
+
+    输出文件:
+      · {output_dir}/{员工}_YYYY-MM_report.md       Markdown报告
+      · {output_dir}/{员工}_YYYY-MM_report.html     HTML报告
+      · {output_dir}/{员工}_YYYY-MM_expense.csv     报销CSV
+      · {output_dir}/{员工}_YYYY-MM_map.html        轨迹地图
+      · {output_dir}/{员工}_YYYY-MM_points.csv      轨迹点CSV
+
+    示例:
+      triplog batch ./gpx_files/ --month 2026-06 -e "张三" -o ./reports
+      triplog batch ./gpx/ --formats html,csv --no-map
+    """
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        parser = TripParser(verbose=verbose)
+        if verbose:
+            console.print(f"[dim]扫描目录: {input_dir}[/dim]")
+        results = parser.parse_directory(str(input_dir), employee_name=employee_name)
+
+        if not results:
+            console.print("[yellow]目录中未找到任何有效GPX文件[/yellow]")
+            sys.exit(0)
+
+        if month:
+            results = _month_filter(results, month)
+            if not results:
+                console.print(f"[yellow]月份 {month} 内无任何行程数据[/yellow]")
+                sys.exit(0)
+
+        reporter = Reporter(verbose=verbose, osrm_base=osrm)
+
+        if month:
+            ym = month
+        else:
+            all_dates = []
+            for r in results:
+                for s in r.segments:
+                    if s.start_time:
+                        all_dates.append(s.start_time)
+            if all_dates:
+                d = min(all_dates)
+                ym = f"{d.year}-{d.month:02d}"
+            else:
+                ym = datetime.now().strftime("%Y-%m")
+
+        emp = employee_name or (results[0].employee_name if results else "员工")
+        safe_emp = emp.replace(" ", "_").replace("/", "_")
+        prefix = f"{safe_emp}_{ym}"
+
+        title = f"{emp} {ym} 月度出差行程报告"
+        report = reporter.build_full_report(results, employee_name=emp, report_title=title, check_route=check_route)
+
+        fmt_list = [x.strip().lower() for x in formats.split(",") if x.strip()]
+        created = []
+
+        if "md" in fmt_list or "markdown" in fmt_list:
+            p = output_dir / f"{prefix}_report.md"
+            reporter.save_markdown(report, str(p))
+            created.append(p)
+        if "html" in fmt_list:
+            p = output_dir / f"{prefix}_report.html"
+            reporter.save_html(report, str(p))
+            created.append(p)
+        if "pdf" in fmt_list:
+            p = output_dir / f"{prefix}_report.pdf"
+            pp = reporter.save_pdf(report, str(p))
+            if pp:
+                created.append(Path(pp))
+        if "csv" in fmt_list:
+            p = output_dir / f"{prefix}_expense.csv"
+            reporter.export_csv(report, str(p))
+            created.append(p)
+            pp = output_dir / f"{prefix}_points.csv"
+            reporter.export_points_csv(results, str(pp))
+            created.append(pp)
+
+        if with_map:
+            p = output_dir / f"{prefix}_map.html"
+            reporter.generate_map(results, str(p), report=report if check_route else None)
+            created.append(p)
+
+        reporter.print_summary(report)
+
+        console.print(f"[bold green]✅ 批量处理完成，共生成 {len(created)} 个文件:[/bold green]")
+        for f in created:
+            console.print(f"  📄 {f}")
+
+    except Exception as e:
+        console.print(f"[bold red]❌ 批量处理失败:[/bold red] {e}")
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command("export")
+@click.argument("gpx_files", nargs=-1, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--dir", "-d", "gpx_dir", type=click.Path(exists=True, file_okay=False, path_type=Path), help="指定目录批量解析")
+@click.option("--employee-name", "-e", default="", help="员工姓名")
+@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), required=True, help="输出CSV路径")
+@click.option("--type", "data_type", type=click.Choice(["expense", "segments", "points"]), default="expense", help="导出类型: expense报销表 / segments行程段 / points全部轨迹点 (默认: expense)")
+@click.option("--month", default="", help="仅处理指定月份 (格式: YYYY-MM)")
+@click.option("--verbose", "-v", is_flag=True, help="显示详细日志")
+def export_cmd(
+    gpx_files: tuple,
+    gpx_dir: Optional[Path],
+    employee_name: str,
+    output: Path,
+    data_type: str,
+    month: str,
+    verbose: bool,
+) -> None:
+    """将行程数据导出为CSV，供财务系统直接导入。
+
+    导出类型说明:
+      · expense  - 报销汇总表 (每段行程一行，含里程/时长/合规等)
+      · segments - 行程段详情表 (同expense)
+      · points   - 原始轨迹点表 (每个GPS点一行，含速度/海拔等)
+
+    示例:
+      triplog export trip.gpx -o expense.csv --type expense
+      triplog export -d ./gpx/ -o points.csv --type points --month 2026-06
+    """
+    try:
+        parser = TripParser(verbose=verbose)
+        results: List[TripResult] = []
+
+        if gpx_dir:
+            results.extend(parser.parse_directory(str(gpx_dir), employee_name=employee_name))
+        for gf in gpx_files:
+            results.append(parser.parse(str(gf), employee_name=employee_name))
+
+        if not results:
+            console.print("[yellow]未找到任何有效的GPX数据[/yellow]")
+            sys.exit(0)
+
+        if month:
+            results = _month_filter(results, month)
+            if not results:
+                console.print(f"[yellow]月份 {month} 内无任何行程数据[/yellow]")
+                sys.exit(0)
+
+        reporter = Reporter(verbose=verbose)
+        report = reporter.build_full_report(results, employee_name=employee_name, check_route=False)
+
+        if data_type == "points":
+            reporter.export_points_csv(results, str(output))
+        else:
+            reporter.export_csv(report, str(output))
+
+        console.print(f"[bold green]✅ CSV导出成功:[/bold green] {output}")
+
+    except Exception as e:
+        console.print(f"[bold red]❌ 导出失败:[/bold red] {e}")
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+def _dispatch_output(
+    reporter: Reporter,
+    report: FullReport,
+    results: List[TripResult],
+    output: Optional[Path],
+    fmt: str,
+    csv_path: Optional[Path] = None,
+    points_csv: Optional[Path] = None,
+) -> None:
+    if fmt in ("md", "markdown"):
+        out = output or Path("trip_report.md")
+        reporter.save_markdown(report, str(out))
+    elif fmt == "html":
+        out = output or Path("trip_report.html")
+        reporter.save_html(report, str(out))
+    elif fmt == "pdf":
+        out = output or Path("trip_report.pdf")
+        reporter.save_pdf(report, str(out))
+    else:
+        reporter.print_summary(report)
+
+    if csv_path:
+        reporter.export_csv(report, str(csv_path))
+    if points_csv:
+        reporter.export_points_csv(results, str(points_csv))
+
+    if fmt != "console":
+        console.print()
+        reporter.print_summary(report)
+
+
+if __name__ == "__main__":
+    cli()

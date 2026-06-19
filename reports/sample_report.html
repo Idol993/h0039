@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>员工出差行程报告 - 张三</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "PingFang SC", sans-serif;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 32px;
+    color: #2c3e50;
+    line-height: 1.6;
+    background: #f7f9fc;
+  }
+  h1 { color: #2980b9; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+  h2 { color: #27ae60; margin-top: 28px; border-left: 5px solid #27ae60; padding-left: 10px; }
+  h3 { color: #8e44ad; }
+  .header-info {
+    background: #fff;
+    padding: 16px 24px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .header-info div { padding: 4px 0; }
+  .header-info b { color: #34495e; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    background: #fff;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  th, td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid #ecf0f1;
+    font-size: 14px;
+  }
+  th { background: linear-gradient(to bottom, #3498db, #2980b9); color: #fff; font-weight: 600; }
+  tr:hover td { background: #f8fbff; }
+  tr:last-child td { border-bottom: none; }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 14px 0;
+  }
+  .stat-card {
+    background: #fff;
+    padding: 14px 18px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    border-top: 3px solid #3498db;
+  }
+  .stat-card .label { font-size: 13px; color: #7f8c8d; }
+  .stat-card .value { font-size: 22px; font-weight: 700; color: #2c3e50; margin-top: 4px; }
+  .warn { background: #fff8e1 !important; color: #e67e22; font-weight: 600; }
+  .danger { background: #ffebee !important; color: #c0392b; font-weight: 700; }
+  .ok { color: #27ae60; font-weight: 600; }
+  .seg-box {
+    background: #fff;
+    padding: 18px 22px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    margin: 14px 0;
+    border-left: 4px solid #3498db;
+  }
+  .seg-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin: 10px 0;
+  }
+  .seg-meta div { padding: 6px 10px; background: #f4f7fa; border-radius: 4px; }
+  .seg-meta span { font-size: 12px; color: #7f8c8d; display: block; }
+  .seg-meta b { color: #2c3e50; }
+  .alert {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    padding: 12px 18px;
+    border-radius: 6px;
+    margin: 14px 0;
+  }
+  .alert-danger { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+  .footer { margin-top: 40px; text-align: center; color: #95a5a6; font-size: 12px; padding: 18px; border-top: 1px solid #ecf0f1; }
+</style>
+</head>
+<body>
+
+<h1>📋 员工出差行程报告</h1>
+
+<div class="header-info">
+  <div><b>员工姓名:</b> 张三</div>
+  <div><b>日期范围:</b> 2026-06-15 ~ 2026-06-15</div>
+  <div><b>生成时间:</b> 2026-06-20 01:37:30</div>
+  <div><b>审批阈值:</b> 单段 > 300.0 km</div>
+</div>
+
+<h2>📊 行程总览表</h2>
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>日期</th><th>起点</th><th>终点</th><th>里程(km)</th>
+      <th>时长</th><th>均速</th><th>推荐路线</th><th>偏差</th><th>路线</th><th>合规</th>
+    </tr>
+  </thead>
+  <tbody>
+  
+    <tr>
+      <td>1</td>
+      <td>2026-06-15</td>
+      <td>(39.90420, 116.40740)</td>
+      <td>(39.95920, 116.48280)</td>
+      <td><b>8.88</b></td>
+      <td>25分0秒</td>
+      <td>21.3 km/h</td>
+      <td>-</td>
+      <td class="">-</td>
+      <td class="ok">-</td>
+      <td class="ok">合规</td>
+    </tr>
+  
+    <tr>
+      <td>2</td>
+      <td>2026-06-15</td>
+      <td>(39.95930, 116.48290)</td>
+      <td>(39.52380, 116.69940)</td>
+      <td><b>89.35</b></td>
+      <td>59分0秒</td>
+      <td>90.9 km/h</td>
+      <td>-</td>
+      <td class="">-</td>
+      <td class="ok">-</td>
+      <td class="ok">合规</td>
+    </tr>
+  
+    <tr>
+      <td>3</td>
+      <td>2026-06-15</td>
+      <td>(39.52380, 116.69940)</td>
+      <td>(39.32100, 117.03300)</td>
+      <td><b>36.61</b></td>
+      <td>1小时16分</td>
+      <td>28.9 km/h</td>
+      <td>-</td>
+      <td class="">-</td>
+      <td class="ok">-</td>
+      <td class="ok">合规</td>
+    </tr>
+  
+  </tbody>
+</table>
+
+<h2>📈 统计汇总</h2>
+<div class="stats-grid">
+  <div class="stat-card"><div class="label">行程段数</div><div class="value">3 段</div></div>
+  <div class="stat-card"><div class="label">停留/办事次数</div><div class="value">2 次</div></div>
+  <div class="stat-card" style="border-top-color:#e74c3c;"><div class="label">总里程</div><div class="value" style="color:#c0392b;">134.84 km</div></div>
+  <div class="stat-card"><div class="label">总时长</div><div class="value">2小时46分</div></div>
+  <div class="stat-card"><div class="label">行驶时长</div><div class="value">1小时23分</div></div>
+  <div class="stat-card"><div class="label">最大单段里程</div><div class="value">89.35 km</div></div>
+</div>
+
+
+
+<h2>🔍 各段行程详情</h2>
+
+
+<div class="seg-box">
+  <h3>🚗 第 1 段 · 2026-06-15</h3>
+  <div class="seg-meta">
+    <div><span>起点坐标</span><b>(39.90420, 116.40740)</b></div>
+    <div><span>终点坐标</span><b>(39.95920, 116.48280)</b></div>
+    <div><span>起止时间</span><b>00:00:00 ~ 00:25:00</b></div>
+    <div><span>实际里程</span><b>8.88 km</b></div>
+    <div><span>行驶时长</span><b>25分0秒</b></div>
+    <div><span>平均速度</span><b>21.3 km/h</b></div>
+    
+    <div class="" style=""><span>合规状态</span><b>合规</b></div>
+  </div>
+
+  
+</div>
+
+<div class="seg-box">
+  <h3>🚗 第 2 段 · 2026-06-15</h3>
+  <div class="seg-meta">
+    <div><span>起点坐标</span><b>(39.95930, 116.48290)</b></div>
+    <div><span>终点坐标</span><b>(39.52380, 116.69940)</b></div>
+    <div><span>起止时间</span><b>00:26:00 ~ 01:25:00</b></div>
+    <div><span>实际里程</span><b>89.35 km</b></div>
+    <div><span>行驶时长</span><b>59分0秒</b></div>
+    <div><span>平均速度</span><b>90.9 km/h</b></div>
+    
+    <div class="" style=""><span>合规状态</span><b>合规</b></div>
+  </div>
+
+  
+  <h4 style="margin-top:14px;color:#3498db;">⏸️ 停留/办事点</h4>
+  <table>
+    <thead><tr><th>#</th><th>位置坐标</th><th>到达时间</th><th>离开时间</th><th>停留时长</th></tr></thead>
+    <tbody>
+    
+      <tr>
+        <td>1</td>
+        <td>(39.95929, 116.48290)</td>
+        <td>00:26</td>
+        <td>00:44</td>
+        <td><b>18分0秒</b></td>
+      </tr>
+    
+    </tbody>
+  </table>
+  
+</div>
+
+<div class="seg-box">
+  <h3>🚗 第 3 段 · 2026-06-15</h3>
+  <div class="seg-meta">
+    <div><span>起点坐标</span><b>(39.52380, 116.69940)</b></div>
+    <div><span>终点坐标</span><b>(39.32100, 117.03300)</b></div>
+    <div><span>起止时间</span><b>01:30:00 ~ 02:46:00</b></div>
+    <div><span>实际里程</span><b>36.61 km</b></div>
+    <div><span>行驶时长</span><b>1小时16分</b></div>
+    <div><span>平均速度</span><b>28.9 km/h</b></div>
+    
+    <div class="" style=""><span>合规状态</span><b>合规</b></div>
+  </div>
+
+  
+  <h4 style="margin-top:14px;color:#3498db;">⏸️ 停留/办事点</h4>
+  <table>
+    <thead><tr><th>#</th><th>位置坐标</th><th>到达时间</th><th>离开时间</th><th>停留时长</th></tr></thead>
+    <tbody>
+    
+      <tr>
+        <td>1</td>
+        <td>(39.52381, 116.69941)</td>
+        <td>01:30</td>
+        <td>02:29</td>
+        <td><b>59分0秒</b></td>
+      </tr>
+    
+    </tbody>
+  </table>
+  
+</div>
+
+
+<div class="footer">
+  本报告由 TripLog 行程管理工具自动生成 · 数据仅供报销参考 · GPS轨迹数据可能存在 ±20.0% 误差
+</div>
+</body>
+</html>

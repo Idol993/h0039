@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ report.report_title }} - {{ report.employee_name }}</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "PingFang SC", sans-serif;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 32px;
+    color: #2c3e50;
+    line-height: 1.6;
+    background: #f7f9fc;
+  }
+  h1 { color: #2980b9; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+  h2 { color: #27ae60; margin-top: 28px; border-left: 5px solid #27ae60; padding-left: 10px; }
+  h3 { color: #8e44ad; }
+  .header-info {
+    background: #fff;
+    padding: 16px 24px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .header-info div { padding: 4px 0; }
+  .header-info b { color: #34495e; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    background: #fff;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  th, td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid #ecf0f1;
+    font-size: 14px;
+  }
+  th { background: linear-gradient(to bottom, #3498db, #2980b9); color: #fff; font-weight: 600; }
+  tr:hover td { background: #f8fbff; }
+  tr:last-child td { border-bottom: none; }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 14px 0;
+  }
+  .stat-card {
+    background: #fff;
+    padding: 14px 18px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    border-top: 3px solid #3498db;
+  }
+  .stat-card .label { font-size: 13px; color: #7f8c8d; }
+  .stat-card .value { font-size: 22px; font-weight: 700; color: #2c3e50; margin-top: 4px; }
+  .warn { background: #fff8e1 !important; color: #e67e22; font-weight: 600; }
+  .danger { background: #ffebee !important; color: #c0392b; font-weight: 700; }
+  .ok { color: #27ae60; font-weight: 600; }
+  .seg-box {
+    background: #fff;
+    padding: 18px 22px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    margin: 14px 0;
+    border-left: 4px solid #3498db;
+  }
+  .seg-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin: 10px 0;
+  }
+  .seg-meta div { padding: 6px 10px; background: #f4f7fa; border-radius: 4px; }
+  .seg-meta span { font-size: 12px; color: #7f8c8d; display: block; }
+  .seg-meta b { color: #2c3e50; }
+  .alert {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    padding: 12px 18px;
+    border-radius: 6px;
+    margin: 14px 0;
+  }
+  .alert-danger { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+  .footer { margin-top: 40px; text-align: center; color: #95a5a6; font-size: 12px; padding: 18px; border-top: 1px solid #ecf0f1; }
+</style>
+</head>
+<body>
+
+<h1>📋 {{ report.report_title }}</h1>
+
+<div class="header-info">
+  <div><b>员工姓名:</b> {{ report.employee_name }}</div>
+  {% if report.date_range %}<div><b>日期范围:</b> {{ report.date_range }}</div>{% endif %}
+  <div><b>生成时间:</b> {{ report.generated_at }}</div>
+  <div><b>审批阈值:</b> 单段 > {{ COMPLIANCE_LIMIT }} km</div>
+</div>
+
+<h2>📊 行程总览表</h2>
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>日期</th><th>起点</th><th>终点</th><th>里程(km)</th>
+      <th>时长</th><th>均速</th><th>推荐路线</th><th>偏差</th><th>路线</th><th>合规</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in report.segments %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ s.date }}</td>
+      <td>{{ s.start_coord_label }}</td>
+      <td>{{ s.end_coord_label }}</td>
+      <td><b>{{ "%.2f"|format(s.distance_km) }}</b></td>
+      <td>{{ s.duration | format_td }}</td>
+      <td>{{ "%.1f"|format(s.avg_speed_kmh) }} km/h</td>
+      <td>{% if s.route_check %}{{ "%.2f"|format(s.route_check.recommended_distance_km) }} km{% else %}-{% endif %}</td>
+      <td class="{% if s.route_check and s.route_check.deviation_percent > DEVIATION_THRESHOLD %}warn{% endif %}">{% if s.route_check %}{{ "%.1f"|format(s.route_check.deviation_percent) }}%{% else %}-{% endif %}</td>
+      <td class="{% if s.route_check and s.route_check.is_detour %}warn{% else %}ok{% endif %}">{% if s.route_check %}{{ s.route_check.status_label }}{% else %}-{% endif %}</td>
+      <td class="{% if s.compliance_warning %}danger{% else %}ok{% endif %}">{{ s.compliance_status }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>📈 统计汇总</h2>
+<div class="stats-grid">
+  <div class="stat-card"><div class="label">行程段数</div><div class="value">{{ report.segments|length }} 段</div></div>
+  <div class="stat-card"><div class="label">停留/办事次数</div><div class="value">{{ report.stay_points|length }} 次</div></div>
+  <div class="stat-card" style="border-top-color:#e74c3c;"><div class="label">总里程</div><div class="value" style="color:#c0392b;">{{ "%.2f"|format(report.total_distance_km) }} km</div></div>
+  <div class="stat-card"><div class="label">总时长</div><div class="value">{{ report.total_duration | format_td }}</div></div>
+  <div class="stat-card"><div class="label">行驶时长</div><div class="value">{{ report.total_moving_time | format_td }}</div></div>
+  <div class="stat-card"><div class="label">最大单段里程</div><div class="value">{{ "%.2f"|format(report.max_single_segment_km) }} km</div></div>
+</div>
+
+{% if report.compliance_violations %}
+<div class="alert alert-danger">
+  <b>⚠️ 合规警告 ({{ report.compliance_violations|length }} 项):</b>
+  <ul style="margin:8px 0 0 20px;">
+  {% for v in report.compliance_violations %}
+    <li>{{ v }}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<h2>🔍 各段行程详情</h2>
+
+{% for s in report.segments %}
+<div class="seg-box">
+  <h3>🚗 第 {{ loop.index }} 段 · {{ s.date }}</h3>
+  <div class="seg-meta">
+    <div><span>起点坐标</span><b>{{ s.start_coord_label }}</b></div>
+    <div><span>终点坐标</span><b>{{ s.end_coord_label }}</b></div>
+    <div><span>起止时间</span><b>{{ s.segment.start_time.strftime('%H:%M:%S') if s.segment.start_time else 'N/A' }} ~ {{ s.segment.end_time.strftime('%H:%M:%S') if s.segment.end_time else 'N/A' }}</b></div>
+    <div><span>实际里程</span><b>{{ "%.2f"|format(s.distance_km) }} km</b></div>
+    <div><span>行驶时长</span><b>{{ s.duration | format_td }}</b></div>
+    <div><span>平均速度</span><b>{{ "%.1f"|format(s.avg_speed_kmh) }} km/h</b></div>
+    {% if s.route_check %}
+    <div><span>推荐最短路线</span><b>{{ "%.2f"|format(s.route_check.recommended_distance_km) }} km</b></div>
+    <div class="{% if s.route_check.is_detour %}alert{% endif %}" style="{% if s.route_check.is_detour %}padding:6px 10px;{% endif %}"><span>路线偏差</span><b>{{ "%.1f"|format(s.route_check.deviation_percent) }} % {{ '⚠️ 疑似绕路' if s.route_check.is_detour else '✓ 正常' }}</b></div>
+    {% endif %}
+    <div class="{% if s.compliance_warning %}alert-danger alert{% endif %}" style="{% if s.compliance_warning %}padding:6px 10px;{% endif %}"><span>合规状态</span><b>{{ s.compliance_status }}</b></div>
+  </div>
+
+  {% if s.segment.stay_points %}
+  <h4 style="margin-top:14px;color:#3498db;">⏸️ 停留/办事点</h4>
+  <table>
+    <thead><tr><th>#</th><th>位置坐标</th><th>到达时间</th><th>离开时间</th><th>停留时长</th></tr></thead>
+    <tbody>
+    {% for stay in s.segment.stay_points %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>({{ "%.5f"|format(stay.center_lat) }}, {{ "%.5f"|format(stay.center_lon) }})</td>
+        <td>{{ stay.start_time.strftime('%H:%M') }}</td>
+        <td>{{ stay.end_time.strftime('%H:%M') }}</td>
+        <td><b>{{ stay.duration | format_td }}</b></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endfor %}
+
+<div class="footer">
+  本报告由 TripLog 行程管理工具自动生成 · 数据仅供报销参考 · GPS轨迹数据可能存在 ±{{ DEVIATION_THRESHOLD }}% 误差
+</div>
+</body>
+</html>

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "triplog"
+version = "0.1.0"
+description = "GPS轨迹文件解析与行程报告生成命令行工具"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "TripLog Team", email = "admin@triplog.local"}
+]
+license = {text = "MIT"}
+dependencies = [
+    "gpxpy>=1.5.0",
+    "geopy>=2.4.0",
+    "polyline>=2.0.0",
+    "rich>=13.7.0",
+    "click>=8.1.0",
+    "folium>=0.15.0",
+    "pandas>=2.0.0",
+    "jinja2>=3.1.0",
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+triplog = "cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*.py", "templates/**/*"]
+
+[tool.setuptools.package-data]
+triplog = ["templates/*.j2", "templates/*.html"]

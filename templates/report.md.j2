@@ -1,0 +1,69 @@
+# {{ report.report_title }}
+
+**员工姓名**: {{ report.employee_name }}
+{% if report.date_range %}
+**日期范围**: {{ report.date_range }}
+{% endif %}
+**生成时间**: {{ report.generated_at }}
+
+---
+
+## 📊 行程总览
+
+| 序号 | 日期 | 起点 | 终点 | 里程(km) | 时长 | 平均速度(km/h) | 推荐路线(km) | 偏差(%) | 路线 | 合规 |
+|------|------|------|------|----------|------|----------------|--------------|---------|------|------|
+{% for s in report.segments %}| {{ loop.index }} | {{ s.date }} | {{ s.start_coord_label }} | {{ s.end_coord_label }} | {{ "%.2f"|format(s.distance_km) }} | {{ s.duration | format_td }} | {{ "%.1f"|format(s.avg_speed_kmh) }} | {% if s.route_check %}{{ "%.2f"|format(s.route_check.recommended_distance_km) }}{% else %}-{% endif %} | {% if s.route_check %}{{ "%.1f"|format(s.route_check.deviation_percent) }}{% else %}-{% endif %} | {% if s.route_check %}{{ s.route_check.status_label }}{% else %}-{% endif %} | {{ s.compliance_status }} |
+{% endfor %}
+
+---
+
+## 📈 统计汇总
+
+- **行程段数**: {{ report.segments|length }} 段
+- **停留/办事次数**: {{ report.stay_points|length }} 次
+- **总里程**: **{{ "%.2f"|format(report.total_distance_km) }} km**
+- **总时长**: {{ report.total_duration | format_td }}
+- **行驶时长**: {{ report.total_moving_time | format_td }}
+- **最大单段里程**: {{ "%.2f"|format(report.max_single_segment_km) }} km
+- **审批阈值**: 单段 > {{ COMPLIANCE_LIMIT }} km 需提前审批
+
+{% if report.compliance_violations %}
+## ⚠️ 合规警告
+
+{% for v in report.compliance_violations %}
+- {{ v }}
+{% endfor %}
+{% endif %}
+
+---
+
+## 🔍 各段行程详情
+
+{% for s in report.segments %}
+### 第 {{ loop.index }} 段 · {{ s.date }}
+
+- **起点**: {{ s.start_coord_label }}
+- **终点**: {{ s.end_coord_label }}
+- **起止时间**: {{ s.segment.start_time.strftime('%H:%M:%S') if s.segment.start_time else 'N/A' }} ~ {{ s.segment.end_time.strftime('%H:%M:%S') if s.segment.end_time else 'N/A' }}
+- **实际里程**: {{ "%.2f"|format(s.distance_km) }} km
+- **行驶时长**: {{ s.duration | format_td }}
+- **平均速度**: {{ "%.1f"|format(s.avg_speed_kmh) }} km/h
+{% if s.route_check %}
+- **推荐最短路线**: {{ "%.2f"|format(s.route_check.recommended_distance_km) }} km
+- **路线偏差**: {{ "%.1f"|format(s.route_check.deviation_percent) }} % {{ '⚠️ 疑似绕路' if s.route_check.is_detour else '✓ 正常' }}
+{% endif %}
+- **合规状态**: {{ s.compliance_status }}
+
+{% if s.segment.stay_points %}
+#### 停留/办事点
+
+| # | 位置 | 到达 | 离开 | 停留时长 |
+|---|------|------|------|----------|
+{% for stay in s.segment.stay_points %}| {{ loop.index }} | ({{ "%.5f"|format(stay.center_lat) }}, {{ "%.5f"|format(stay.center_lon) }}) | {{ stay.start_time.strftime('%H:%M') }} | {{ stay.end_time.strftime('%H:%M') }} | {{ stay.duration | format_td }} |
+{% endfor %}
+{% endif %}
+
+---
+{% endfor %}
+
+*报告由 TripLog 自动生成，GPS数据可能存在误差，仅供参考。*
