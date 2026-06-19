@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>李四 2026-06 月度出差行程报告 - 李四</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "PingFang SC", sans-serif;
+    max-width: 1300px;
+    margin: 0 auto;
+    padding: 28px 32px;
+    color: #2c3e50;
+    line-height: 1.6;
+    background: #f7f9fc;
+  }
+  h1 { color: #2980b9; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+  h2 { color: #27ae60; margin-top: 28px; border-left: 5px solid #27ae60; padding-left: 10px; }
+  h3 { color: #8e44ad; }
+  h4 { color: #2980b9; margin-top: 14px; }
+  .header-info {
+    background: #fff;
+    padding: 16px 24px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .header-info div { padding: 4px 0; }
+  .header-info b { color: #34495e; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    background: #fff;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  th, td {
+    padding: 10px 10px;
+    text-align: left;
+    border-bottom: 1px solid #ecf0f1;
+    font-size: 13px;
+  }
+  th { background: linear-gradient(to bottom, #3498db, #2980b9); color: #fff; font-weight: 600; white-space: nowrap; }
+  tr:hover td { background: #f8fbff; }
+  tr:last-child td { border-bottom: none; }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+    margin: 14px 0;
+  }
+  .stat-card {
+    background: #fff;
+    padding: 14px 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    border-top: 3px solid #3498db;
+  }
+  .stat-card .label { font-size: 13px; color: #7f8c8d; }
+  .stat-card .value { font-size: 22px; font-weight: 700; color: #2c3e50; margin-top: 4px; }
+  .warn { background: #fff8e1 !important; color: #e67e22; font-weight: 600; }
+  .danger { background: #ffebee !important; color: #c0392b; font-weight: 700; }
+  .ok { color: #27ae60; font-weight: 600; }
+  .muted { color: #95a5a6; }
+  .policy-tag { display:inline-block; padding:2px 8px; background:#eef2ff; color:#4f46e5; border-radius:10px; font-size:12px; font-weight:600; }
+  .tag-direct { background:#dcfce7; color:#166534; }
+  .tag-finance { background:#fef9c3; color:#854d0e; }
+  .tag-supervisor { background:#fee2e2; color:#991b1b; }
+  .seg-box {
+    background: #fff;
+    padding: 18px 22px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    margin: 14px 0;
+    border-left: 4px solid #3498db;
+  }
+  .seg-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin: 10px 0;
+  }
+  .seg-meta div { padding: 6px 10px; background: #f4f7fa; border-radius: 4px; }
+  .seg-meta span { font-size: 12px; color: #7f8c8d; display: block; }
+  .seg-meta b { color: #2c3e50; }
+  .alert {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    padding: 12px 18px;
+    border-radius: 6px;
+    margin: 14px 0;
+  }
+  .alert-danger { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+  .alert-warning { background: #fff3cd; border-color: #ffeaa7; color: #856404; }
+  .alert-success { background: #d4edda; border-color: #c3e6cb; color: #155724; }
+  .alert-info { background: #d1ecf1; border-color: #bee5eb; color: #0c5460; }
+  .list-section { margin: 8px 0; }
+  .list-section ul { margin: 8px 0 0 20px; padding: 0; }
+  .list-section li { margin: 4px 0; font-size: 14px; }
+  .footer { margin-top: 40px; text-align: center; color: #95a5a6; font-size: 12px; padding: 18px; border-top: 1px solid #ecf0f1; }
+</style>
+</head>
+<body>
+
+<h1>📋 李四 2026-06 月度出差行程报告</h1>
+
+<div class="header-info">
+  <div><b>员工姓名:</b> 李四</div>
+  <div><b>日期范围:</b> 2026-06-18 ~ 2026-06-18</div>
+  <div><b>生成时间:</b> 2026-06-20 03:18:57</div>
+  <div><b>报销政策:</b> 销售部</div>
+  <div><b>参考单价:</b> 2.00 元/km</div>
+  <div><b>审批阈值:</b> 单段 > 500.0 km</div>
+</div>
+
+<h2>📊 行程总览表</h2>
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>日期</th><th>起点</th><th>终点</th><th>里程(km)</th>
+      <th>行驶时长</th><th>均速</th><th>推荐</th><th>偏差</th><th>路线</th>
+      <th>政策</th><th>报销(元)</th><th>夜间</th><th>审批</th><th>合规</th>
+    </tr>
+  </thead>
+  <tbody>
+  
+    <tr>
+      <td>1</td>
+      <td>2026-06-18</td>
+      <td>(31.23040, 121.47370)</td>
+      <td>(33.30000, 118.85200)</td>
+      <td><b>337.17</b></td>
+      <td>11小时30分</td>
+      <td>29.3 km/h</td>
+      <td>-</td>
+      <td class="">-</td>
+      <td class="ok">⚠️ 未核验(手动关闭)</td>
+      <td><span class="policy-tag">销售部</span></td>
+      <td><b>1213.81</b></td>
+      <td><span class="warn">是</span></td>
+      <td><span class="policy-tag tag-finance">
+        财务
+      </span></td>
+      <td class="ok">合规</td>
+    </tr>
+  
+  </tbody>
+</table>
+
+<h2>📈 统计汇总</h2>
+<div class="stats-grid">
+  <div class="stat-card"><div class="label">行程段数</div><div class="value">1 段</div></div>
+  <div class="stat-card"><div class="label">停留/办事次数</div><div class="value">0 次</div></div>
+  <div class="stat-card" style="border-top-color:#e74c3c;"><div class="label">总里程</div><div class="value" style="color:#c0392b;">337.17 km</div></div>
+  <div class="stat-card"><div class="label">行驶时长</div><div class="value">11小时30分</div></div>
+  <div class="stat-card"><div class="label">最大单段里程</div><div class="value">337.17 km</div></div>
+  
+  <div class="stat-card" style="border-top-color:#27ae60;"><div class="label">可报销总额</div><div class="value" style="color:#27ae60;">1213.81 元</div></div>
+  
+  
+  <div class="stat-card" style="border-top-color:#f39c12;"><div class="label">未核验段</div><div class="value" style="color:#e67e22;">1 段</div></div>
+  
+</div>
+
+
+<div class="alert alert-warning">
+  <b>⚠️ 未核验段统计:</b>
+  <ul style="margin:6px 0 0 20px;">
+  
+    <li>手动关闭路线核验: 1 段</li>
+  
+  </ul>
+</div>
+
+
+
+<h3>📋 政策使用汇总</h3>
+<table>
+  <thead>
+    <tr><th>政策名</th><th>段数</th><th>里程(km)</th><th>金额(元)</th><th>单价(元/km)</th></tr>
+  </thead>
+  <tbody>
+  
+    <tr>
+      <td><span class="policy-tag">销售部</span></td>
+      <td>1</td>
+      <td>337.17</td>
+      <td><b>1213.81</b></td>
+      <td>2.00</td>
+    </tr>
+  
+  </tbody>
+</table>
+
+
+
+<h2>💰 报销审批清单</h2>
+
+
+
+
+<div class="alert alert-warning list-section">
+  <b>📋 待财务复核 (1 段):</b>
+  <ul>
+  <li>2026-06-18 第1段 (337.2km) · 1213.81元 · 政策[销售部] · 单段里程337.2km达到500km阈值的50%</li>
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="alert alert-info list-section">
+  <b>⚠️ 未核验段清单 (1 段):</b>
+  <ul>
+  <li>2026-06-18 第1段 · 原因: 手动关闭路线核验</li>
+  </ul>
+</div>
+
+
+
+
+<h2>🔍 各段行程详情</h2>
+
+
+<div class="seg-box">
+  <h3>🚗 第 1 段 · 2026-06-18 · <span class="policy-tag">销售部</span></h3>
+  <div class="seg-meta">
+    <div><span>起点坐标</span><b>(31.23040, 121.47370)</b></div>
+    <div><span>终点坐标</span><b>(33.30000, 118.85200)</b></div>
+    <div><span>起止时间</span><b>00:30:00 ~ 12:00:00</b></div>
+    <div><span>实际里程</span><b>337.17 km</b></div>
+    <div><span>行驶时长</span><b>11小时30分</b></div>
+    <div><span>平均速度</span><b>29.3 km/h</b></div>
+    
+    <div class="muted"><span>推荐最短路线</span><b>-</b></div>
+    <div class="alert" style="padding:6px 10px;"><span>路线核验</span><b>⚠️ 未核验 · 原因: 手动关闭路线核验</b></div>
+    
+    <div class="" style=""><span>合规状态</span><b>合规</b></div>
+    
+    <div style="background:#e8f5e9;"><span>可报销金额</span><b style="color:#2e7d32;">1213.81 元</b></div>
+    <div><span>报销政策</span><b>销售部</b></div>
+    <div><span>报销单价</span><b>2.00 元/km (夜间×1.8)</b></div>
+    <div><span>审批状态</span><b>
+      <span class="policy-tag tag-finance">
+        待财务复核
+      </span>
+    </b></div>
+    
+    <div class="alert" style="padding:6px 10px;"><span>需审批原因</span><b>单段里程337.2km达到500km阈值的50%</b></div>
+    
+    
+  </div>
+
+  
+</div>
+
+
+<div class="footer">
+  本报告由 TripLog 行程管理工具自动生成 · 数据仅供报销参考 · GPS轨迹数据可能存在误差
+</div>
+</body>
+</html>

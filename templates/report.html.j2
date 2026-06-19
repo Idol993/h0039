@@ -7,7 +7,7 @@
 <style>
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "PingFang SC", sans-serif;
-    max-width: 1200px;
+    max-width: 1300px;
     margin: 0 auto;
     padding: 28px 32px;
     color: #2c3e50;
@@ -17,6 +17,7 @@
   h1 { color: #2980b9; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
   h2 { color: #27ae60; margin-top: 28px; border-left: 5px solid #27ae60; padding-left: 10px; }
   h3 { color: #8e44ad; }
+  h4 { color: #2980b9; margin-top: 14px; }
   .header-info {
     background: #fff;
     padding: 16px 24px;
@@ -38,23 +39,23 @@
     box-shadow: 0 1px 4px rgba(0,0,0,0.06);
   }
   th, td {
-    padding: 10px 12px;
+    padding: 10px 10px;
     text-align: left;
     border-bottom: 1px solid #ecf0f1;
-    font-size: 14px;
+    font-size: 13px;
   }
-  th { background: linear-gradient(to bottom, #3498db, #2980b9); color: #fff; font-weight: 600; }
+  th { background: linear-gradient(to bottom, #3498db, #2980b9); color: #fff; font-weight: 600; white-space: nowrap; }
   tr:hover td { background: #f8fbff; }
   tr:last-child td { border-bottom: none; }
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 12px;
     margin: 14px 0;
   }
   .stat-card {
     background: #fff;
-    padding: 14px 18px;
+    padding: 14px 16px;
     border-radius: 8px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.06);
     border-top: 3px solid #3498db;
@@ -65,6 +66,10 @@
   .danger { background: #ffebee !important; color: #c0392b; font-weight: 700; }
   .ok { color: #27ae60; font-weight: 600; }
   .muted { color: #95a5a6; }
+  .policy-tag { display:inline-block; padding:2px 8px; background:#eef2ff; color:#4f46e5; border-radius:10px; font-size:12px; font-weight:600; }
+  .tag-direct { background:#dcfce7; color:#166534; }
+  .tag-finance { background:#fef9c3; color:#854d0e; }
+  .tag-supervisor { background:#fee2e2; color:#991b1b; }
   .seg-box {
     background: #fff;
     padding: 18px 22px;
@@ -92,6 +97,11 @@
   }
   .alert-danger { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
   .alert-warning { background: #fff3cd; border-color: #ffeaa7; color: #856404; }
+  .alert-success { background: #d4edda; border-color: #c3e6cb; color: #155724; }
+  .alert-info { background: #d1ecf1; border-color: #bee5eb; color: #0c5460; }
+  .list-section { margin: 8px 0; }
+  .list-section ul { margin: 8px 0 0 20px; padding: 0; }
+  .list-section li { margin: 4px 0; font-size: 14px; }
   .footer { margin-top: 40px; text-align: center; color: #95a5a6; font-size: 12px; padding: 18px; border-top: 1px solid #ecf0f1; }
 </style>
 </head>
@@ -104,7 +114,7 @@
   {% if report.date_range %}<div><b>日期范围:</b> {{ report.date_range }}</div>{% endif %}
   <div><b>生成时间:</b> {{ report.generated_at }}</div>
   {% if report.policy_name %}<div><b>报销政策:</b> {{ report.policy_name }}</div>{% endif %}
-  {% if report.price_per_km is not none %}<div><b>单价:</b> {{ "%.2f"|format(report.price_per_km) }} 元/km</div>{% endif %}
+  {% if report.price_per_km is not none %}<div><b>参考单价:</b> {{ "%.2f"|format(report.price_per_km) }} 元/km</div>{% endif %}
   {% if report.approval_threshold_km is not none %}<div><b>审批阈值:</b> 单段 > {{ "%.1f"|format(report.approval_threshold_km) }} km</div>{% endif %}
 </div>
 
@@ -113,8 +123,8 @@
   <thead>
     <tr>
       <th>#</th><th>日期</th><th>起点</th><th>终点</th><th>里程(km)</th>
-      <th>行驶时长</th><th>均速</th><th>推荐路线</th><th>偏差</th><th>路线</th>
-      <th>报销(元)</th><th>夜间</th><th>合规</th>
+      <th>行驶时长</th><th>均速</th><th>推荐</th><th>偏差</th><th>路线</th>
+      <th>政策</th><th>报销(元)</th><th>夜间</th><th>审批</th><th>合规</th>
     </tr>
   </thead>
   <tbody>
@@ -130,8 +140,12 @@
       <td>{{ s.rec_distance_display }}</td>
       <td class="{% if s.route_check and s.route_check.verified and s.route_check.deviation_percent > DEVIATION_THRESHOLD %}warn{% endif %}">{{ s.deviation_display }}</td>
       <td class="{% if s.route_check and s.route_check.verified and s.route_check.is_detour %}warn{% else %}ok{% endif %}">{{ s.route_status_display }}</td>
+      <td><span class="policy-tag">{{ s.policy_name }}</span></td>
       <td><b>{% if s.reimbursement %}{{ "%.2f"|format(s.reimbursement.amount) }}{% else %}-{% endif %}</b></td>
       <td>{% if s.reimbursement and s.reimbursement.is_night %}<span class="warn">是</span>{% else %}否{% endif %}</td>
+      <td>{% if s.reimbursement %}<span class="policy-tag {% if s.reimbursement.approval_stage == 'supervisor' %}tag-supervisor{% elif s.reimbursement.approval_stage == 'finance' %}tag-finance{% else %}tag-direct{% endif %}">
+        {{ '主管' if s.reimbursement.approval_stage == 'supervisor' else ('财务' if s.reimbursement.approval_stage == 'finance' else '直接') }}
+      </span>{% else %}-{% endif %}</td>
       <td class="{% if s.compliance_warning %}danger{% else %}ok{% endif %}">{{ s.compliance_status }}</td>
     </tr>
   {% endfor %}
@@ -148,26 +162,87 @@
   {% if report.total_reimbursement_amount is not none %}
   <div class="stat-card" style="border-top-color:#27ae60;"><div class="label">可报销总额</div><div class="value" style="color:#27ae60;">{{ "%.2f"|format(report.total_reimbursement_amount) }} 元</div></div>
   {% endif %}
+  {% if report.unverified_count > 0 %}
+  <div class="stat-card" style="border-top-color:#f39c12;"><div class="label">未核验段</div><div class="value" style="color:#e67e22;">{{ report.unverified_count }} 段</div></div>
+  {% endif %}
 </div>
 
-{% if report.compliance_violations %}
-<div class="alert alert-danger">
-  <b>⚠️ 里程超限 ({{ report.compliance_violations|length }} 项):</b>
-  <ul style="margin:8px 0 0 20px;">
-  {% for v in report.compliance_violations %}
-    <li>{{ v }}</li>
+{% if report.unverified_count > 0 %}
+<div class="alert alert-warning">
+  <b>⚠️ 未核验段统计:</b>
+  <ul style="margin:6px 0 0 20px;">
+  {% for reason, cnt in report.unverified_breakdown.items() %}
+    <li>{{ reason }}: {{ cnt }} 段</li>
   {% endfor %}
   </ul>
 </div>
 {% endif %}
 
-{% if report.approval_required %}
-<div class="alert alert-warning">
-  <b>📝 需审批事项 ({{ report.approval_required|length }} 项):</b>
-  <ul style="margin:8px 0 0 20px;">
-  {% for item in report.approval_required %}
-    <li>{{ item }}</li>
+{% if report.policy_breakdown %}
+<h3>📋 政策使用汇总</h3>
+<table>
+  <thead>
+    <tr><th>政策名</th><th>段数</th><th>里程(km)</th><th>金额(元)</th><th>单价(元/km)</th></tr>
+  </thead>
+  <tbody>
+  {% for pname, info in report.policy_breakdown.items() %}
+    <tr>
+      <td><span class="policy-tag">{{ pname }}</span></td>
+      <td>{{ info.count }}</td>
+      <td>{{ "%.2f"|format(info.distance) }}</td>
+      <td><b>{{ "%.2f"|format(info.amount) }}</b></td>
+      <td>{{ "%.2f"|format(info.price_per_km) }}</td>
+    </tr>
   {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if report.direct_reimburse or report.supervisor_approval or report.finance_review %}
+<h2>💰 报销审批清单</h2>
+
+{% if report.direct_reimburse %}
+<div class="alert alert-success list-section">
+  <b>✅ 可直接报销 ({{ report.direct_reimburse|length }} 段):</b>
+  <ul>
+  {% for item in report.direct_reimburse %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if report.finance_review %}
+<div class="alert alert-warning list-section">
+  <b>📋 待财务复核 ({{ report.finance_review|length }} 段):</b>
+  <ul>
+  {% for item in report.finance_review %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if report.supervisor_approval %}
+<div class="alert alert-danger list-section">
+  <b>🔴 待主管审批 ({{ report.supervisor_approval|length }} 段):</b>
+  <ul>
+  {% for item in report.supervisor_approval %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endif %}
+
+{% if report.unverified_segments %}
+<div class="alert alert-info list-section">
+  <b>⚠️ 未核验段清单 ({{ report.unverified_count }} 段):</b>
+  <ul>
+  {% for item in report.unverified_segments %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if report.compliance_violations %}
+<div class="alert alert-danger list-section">
+  <b>🚨 里程超限 ({{ report.compliance_violations|length }} 项):</b>
+  <ul>
+  {% for v in report.compliance_violations %}<li>{{ v }}</li>{% endfor %}
   </ul>
 </div>
 {% endif %}
@@ -176,7 +251,7 @@
 
 {% for s in report.segments %}
 <div class="seg-box">
-  <h3>🚗 第 {{ loop.index }} 段 · {{ s.date }}</h3>
+  <h3>🚗 第 {{ loop.index }} 段 · {{ s.date }} · <span class="policy-tag">{{ s.policy_name }}</span></h3>
   <div class="seg-meta">
     <div><span>起点坐标</span><b>{{ s.start_coord_label }}</b>{% if s.reimbursement and s.reimbursement.whitelist_start %} <span class="ok" style="font-size:12px;">({{ s.reimbursement.whitelist_start }})</span>{% endif %}</div>
     <div><span>终点坐标</span><b>{{ s.end_coord_label }}</b>{% if s.reimbursement and s.reimbursement.whitelist_end %} <span class="ok" style="font-size:12px;">({{ s.reimbursement.whitelist_end }})</span>{% endif %}</div>
@@ -184,17 +259,25 @@
     <div><span>实际里程</span><b>{{ "%.2f"|format(s.distance_km) }} km</b></div>
     <div><span>行驶时长</span><b>{{ s.duration | format_td }}</b></div>
     <div><span>平均速度</span><b>{{ "%.1f"|format(s.avg_speed_kmh) }} km/h</b></div>
+    {% if s.is_unverified %}
+    <div class="muted"><span>推荐最短路线</span><b>-</b></div>
+    <div class="alert" style="padding:6px 10px;"><span>路线核验</span><b>⚠️ 未核验 · 原因: {{ s.unverified_reason_display }}</b></div>
+    {% else %}
     {% if s.route_check and s.route_check.verified %}
     <div><span>推荐最短路线</span><b>{{ "%.2f"|format(s.route_check.recommended_distance_km) }} km</b></div>
     <div class="{% if s.route_check.is_detour %}alert{% endif %}" style="{% if s.route_check.is_detour %}padding:6px 10px;{% endif %}"><span>路线偏差</span><b>{{ "%.1f"|format(s.route_check.deviation_percent) }} % {{ '⚠️ 疑似绕路' if s.route_check.is_detour else '✓ 正常' }}</b></div>
-    {% else %}
-    <div class="muted"><span>推荐最短路线</span><b>-</b></div>
-    <div class="muted"><span>路线状态</span><b>⚠️ 未核验</b></div>
+    {% endif %}
     {% endif %}
     <div class="{% if s.compliance_warning %}alert-danger alert{% endif %}" style="{% if s.compliance_warning %}padding:6px 10px;{% endif %}"><span>合规状态</span><b>{{ s.compliance_status }}</b></div>
     {% if s.reimbursement %}
     <div style="background:#e8f5e9;"><span>可报销金额</span><b style="color:#2e7d32;">{{ "%.2f"|format(s.reimbursement.amount) }} 元</b></div>
+    <div><span>报销政策</span><b>{{ s.reimbursement.policy_name }}</b></div>
     <div><span>报销单价</span><b>{{ "%.2f"|format(s.reimbursement.price_per_km) }} 元/km{% if s.reimbursement.is_night %} (夜间×{{ "%.1f"|format(s.reimbursement.night_multiplier) }}){% endif %}</b></div>
+    <div><span>审批状态</span><b>
+      <span class="policy-tag {% if s.reimbursement.approval_stage == 'supervisor' %}tag-supervisor{% elif s.reimbursement.approval_stage == 'finance' %}tag-finance{% else %}tag-direct{% endif %}">
+        {{ '待主管审批' if s.reimbursement.approval_stage == 'supervisor' else ('待财务复核' if s.reimbursement.approval_stage == 'finance' else '可直接报销') }}
+      </span>
+    </b></div>
     {% if s.reimbursement.approval_reasons %}
     <div class="alert" style="padding:6px 10px;"><span>需审批原因</span><b>{{ s.reimbursement.approval_reasons|join('；') }}</b></div>
     {% endif %}
@@ -202,7 +285,7 @@
   </div>
 
   {% if s.segment.stay_points %}
-  <h4 style="margin-top:14px;color:#3498db;">⏸️ 停留/办事点</h4>
+  <h4>⏸️ 停留/办事点</h4>
   <table>
     <thead><tr><th>#</th><th>位置坐标</th><th>到达时间</th><th>离开时间</th><th>停留时长</th></tr></thead>
     <tbody>

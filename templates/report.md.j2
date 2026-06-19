@@ -5,16 +5,23 @@
 **日期范围**: {{ report.date_range }}
 {% endif %}
 **生成时间**: {{ report.generated_at }}
+{% if report.policy_name %}
 **报销政策**: {{ report.policy_name }}
-**单价**: {{ "%.2f"|format(report.price_per_km) }} 元/km
+{% endif %}
+{% if report.price_per_km is not none and report.price_per_km > 0 %}
+**参考单价**: {{ "%.2f"|format(report.price_per_km) }} 元/km
+{% endif %}
+{% if report.approval_threshold_km is not none %}
+**审批阈值**: 单段 > {{ "%.1f"|format(report.approval_threshold_km) }} km
+{% endif %}
 
 ---
 
 ## 📊 行程总览
 
-| 序号 | 日期 | 起点 | 终点 | 里程(km) | 行驶时长 | 均速(km/h) | 推荐路线(km) | 偏差(%) | 路线 | 报销(元) | 夜间 | 合规 |
-|------|------|------|------|----------|----------|------------|--------------|---------|------|----------|------|------|
-{% for s in report.segments %}| {{ loop.index }} | {{ s.date }} | {{ s.start_coord_label }} | {{ s.end_coord_label }} | {{ "%.2f"|format(s.distance_km) }} | {{ s.duration | format_td }} | {{ "%.1f"|format(s.avg_speed_kmh) }} | {{ s.rec_distance_display }} | {{ s.deviation_display }} | {{ s.route_status_display }} | {% if s.reimbursement %}{{ "%.2f"|format(s.reimbursement.amount) }}{% else %}-{% endif %} | {% if s.reimbursement %}{{ '是' if s.reimbursement.is_night else '否' }}{% else %}-{% endif %} | {{ s.compliance_status }} |
+| 序号 | 日期 | 起点 | 终点 | 里程(km) | 行驶时长 | 均速(km/h) | 推荐路线(km) | 偏差(%) | 路线 | 政策 | 报销(元) | 夜间 | 审批 | 合规 |
+|------|------|------|------|----------|----------|------------|--------------|---------|------|------|----------|------|------|------|
+{% for s in report.segments %}| {{ loop.index }} | {{ s.date }} | {{ s.start_coord_label }} | {{ s.end_coord_label }} | {{ "%.2f"|format(s.distance_km) }} | {{ s.duration | format_td }} | {{ "%.1f"|format(s.avg_speed_kmh) }} | {{ s.rec_distance_display }} | {{ s.deviation_display }} | {{ s.route_status_display }} | {{ s.policy_name }} | {% if s.reimbursement %}{{ "%.2f"|format(s.reimbursement.amount) }}{% else %}-{% endif %} | {% if s.reimbursement %}{{ '是' if s.reimbursement.is_night else '否' }}{% else %}-{% endif %} | {% if s.reimbursement %}{{ '主管' if s.reimbursement.approval_stage == 'supervisor' else ('财务' if s.reimbursement.approval_stage == 'finance' else '直接') }}{% else %}-{% endif %} | {{ s.compliance_status }} |
 {% endfor %}
 
 ---
@@ -27,24 +34,65 @@
 - **行驶时长**: {{ report.total_moving_time | format_td }}
 - **最大单段里程**: {{ "%.2f"|format(report.max_single_segment_km) }} km
 - **可报销总额**: **{{ "%.2f"|format(report.total_reimbursement_amount) }} 元**
-- **审批阈值**: 单段 > {{ COMPLIANCE_LIMIT }} km 需提前审批
+{% if report.unverified_count > 0 %}
+- **未核验段数**: {{ report.unverified_count }} 段
+{% for reason, cnt in report.unverified_breakdown.items() %}  - {{ reason }}: {{ cnt }} 段
+{% endfor %}
+{% endif %}
 
-{% if report.compliance_violations or report.approval_required %}
-## ⚠️ 审批/合规提醒
+{% if report.policy_breakdown %}
+### 📋 政策使用汇总
+
+| 政策名 | 段数 | 里程(km) | 金额(元) | 单价(元/km) |
+|--------|------|----------|----------|-------------|
+{% for pname, info in report.policy_breakdown.items() %}| {{ pname }} | {{ info.count }} | {{ "%.2f"|format(info.distance) }} | {{ "%.2f"|format(info.amount) }} | {{ "%.2f"|format(info.price_per_km) }} |
+{% endfor %}
+{% endif %}
+
+{% if report.direct_reimburse or report.supervisor_approval or report.finance_review %}
+---
+
+## 💰 报销审批清单
+
+{% if report.direct_reimburse %}
+### ✅ 可直接报销 ({{ report.direct_reimburse|length }} 段)
+{% for item in report.direct_reimburse %}
+- {{ item }}
+{% endfor %}
+{% endif %}
+
+{% if report.finance_review %}
+### 📋 待财务复核 ({{ report.finance_review|length }} 段)
+{% for item in report.finance_review %}
+- {{ item }}
+{% endfor %}
+{% endif %}
+
+{% if report.supervisor_approval %}
+### 🔴 待主管审批 ({{ report.supervisor_approval|length }} 段)
+{% for item in report.supervisor_approval %}
+- {{ item }}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+{% if report.unverified_segments %}
+---
+
+## ⚠️ 未核验段清单 ({{ report.unverified_count }} 段)
+
+{% for item in report.unverified_segments %}
+- {{ item }}
+{% endfor %}
+{% endif %}
 
 {% if report.compliance_violations %}
-### 里程超限
+---
+
+## 🚨 里程超限 ({{ report.compliance_violations|length }} 项)
 {% for v in report.compliance_violations %}
 - {{ v }}
 {% endfor %}
-{% endif %}
-
-{% if report.approval_required %}
-### 需审批事项
-{% for v in report.approval_required %}
-- {{ v }}
-{% endfor %}
-{% endif %}
 {% endif %}
 
 ---
@@ -52,7 +100,7 @@
 ## 🔍 各段行程详情
 
 {% for s in report.segments %}
-### 第 {{ loop.index }} 段 · {{ s.date }}
+### 第 {{ loop.index }} 段 · {{ s.date }} · 政策[{{ s.policy_name }}]
 
 - **起点**: {{ s.start_coord_label }}{% if s.reimbursement and s.reimbursement.whitelist_start %} ({{ s.reimbursement.whitelist_start }}){% endif %}
 - **终点**: {{ s.end_coord_label }}{% if s.reimbursement and s.reimbursement.whitelist_end %} ({{ s.reimbursement.whitelist_end }}){% endif %}
@@ -60,17 +108,21 @@
 - **实际里程**: {{ "%.2f"|format(s.distance_km) }} km
 - **行驶时长**: {{ s.duration | format_td }}
 - **平均速度**: {{ "%.1f"|format(s.avg_speed_kmh) }} km/h
+{% if s.is_unverified %}
+- **路线核验**: ⚠️ 未核验 · 原因: {{ s.unverified_reason_display }}
+{% else %}
 {% if s.route_check and s.route_check.verified %}
 - **推荐最短路线**: {{ "%.2f"|format(s.route_check.recommended_distance_km) }} km
 - **路线偏差**: {{ "%.1f"|format(s.route_check.deviation_percent) }} % {{ '⚠️ 疑似绕路' if s.route_check.is_detour else '✓ 正常' }}
-{% elif s.route_check and not s.route_check.verified %}
-- **路线核验**: ⚠️ 未核验 (网络不可用)
+{% endif %}
 {% endif %}
 - **合规状态**: {{ s.compliance_status }}
 {% if s.reimbursement %}
-- **可报销金额**: {{ "%.2f"|format(s.reimbursement.amount) }} 元 (单价 {{ "%.2f"|format(s.reimbursement.price_per_km) }} 元/km{% if s.reimbursement.is_night %}, 夜间x{{ s.reimbursement.night_multiplier }}{% endif %})
+- **报销政策**: {{ s.reimbursement.policy_name }}
+- **可报销金额**: {{ "%.2f"|format(s.reimbursement.amount) }} 元 (单价 {{ "%.2f"|format(s.reimbursement.price_per_km) }} 元/km{% if s.reimbursement.is_night %}, 夜间×{{ "%.1f"|format(s.reimbursement.night_multiplier) }}{% endif %})
+- **审批状态**: {{ '待主管审批' if s.reimbursement.approval_stage == 'supervisor' else ('待财务复核' if s.reimbursement.approval_stage == 'finance' else '可直接报销') }}
 {% if s.reimbursement.approval_reasons %}
-- **需审批原因**: {{ s.reimbursement.approval_reasons | join('; ') }}
+- **需审批原因**: {{ s.reimbursement.approval_reasons | join('；') }}
 {% endif %}
 {% endif %}
 

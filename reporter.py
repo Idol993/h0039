@@ -42,14 +42,30 @@ class RouteComparison:
     is_detour: bool
     recommended_route_polyline: Optional[str] = None
     verified: bool = True
+    unverified_reason: str = ""  # manual(手动关闭) / network(网络失败) / no_result(服务无结果)
 
     @property
     def status_label(self) -> str:
         if not self.verified:
+            if self.unverified_reason == "manual":
+                return "⚠️ 未核验(手动关闭)"
+            if self.unverified_reason == "no_result":
+                return "⚠️ 未核验(路线服务无结果)"
             return "⚠️ 未核验(网络不可用)"
         if self.is_detour:
             return "⚠️ 疑似绕路"
         return "✓ 路线正常"
+
+    @property
+    def unverified_reason_display(self) -> str:
+        if self.verified:
+            return ""
+        mapping = {
+            "manual": "手动关闭路线核验",
+            "network": "网络请求失败",
+            "no_result": "路线服务未返回结果",
+        }
+        return mapping.get(self.unverified_reason, "未核验")
 
 
 @dataclass
@@ -66,6 +82,7 @@ class SegmentReport:
     compliance_warning: bool = False
     reimbursement: Optional[SegmentReimbursement] = None
     policy_name: str = "default"
+    trip_source_id: str = ""  # 用于地图推荐路线匹配，避免跨文件段号冲突
 
     @property
     def rec_distance_display(self) -> str:
@@ -84,6 +101,16 @@ class SegmentReport:
         if not self.route_check:
             return "-"
         return self.route_check.status_label
+
+    @property
+    def is_unverified(self) -> bool:
+        return not (self.route_check and self.route_check.verified)
+
+    @property
+    def unverified_reason_display(self) -> str:
+        if self.route_check:
+            return self.route_check.unverified_reason_display
+        return "手动关闭路线核验"
 
 
 @dataclass
@@ -104,6 +131,16 @@ class FullReport:
     policy_name: str = "default"
     price_per_km: float = 1.5
     approval_threshold_km: Optional[float] = None
+    # 审批流三类清单
+    direct_reimburse: List[str] = field(default_factory=list)  # 可直接报销
+    supervisor_approval: List[str] = field(default_factory=list)  # 待主管审批
+    finance_review: List[str] = field(default_factory=list)  # 待财务复核
+    # 未核验统计
+    unverified_segments: List[str] = field(default_factory=list)  # 未核验段列表
+    unverified_count: int = 0
+    unverified_breakdown: Dict[str, int] = field(default_factory=dict)
+    # 多政策汇总
+    policy_breakdown: Dict[str, Dict] = field(default_factory=dict)  # {政策名: {段数, 里程, 金额, 单价}}
 
 
 def _format_timedelta(td: timedelta) -> str:
@@ -167,13 +204,13 @@ class RouteComparator:
             except Exception:
                 pass
 
-    def _query_route(self, coords: List[Tuple[float, float]]) -> Optional[Dict]:
+    def _query_route(self, coords: List[Tuple[float, float]]) -> Tuple[Optional[Dict], str]:
         if len(coords) < 2:
-            return None
+            return None, "no_result"
         key = self._cache_key(coords)
         cached = self._cache_get(key)
         if cached is not None:
-            return cached
+            return cached, "ok"
 
         coord_str = ";".join(f"{lon:.6f},{lat:.6f}" for lat, lon in coords)
         url = f"{self.osrm_base}/route/v1/driving/{coord_str}"
@@ -183,6 +220,7 @@ class RouteComparator:
             "steps": "false",
         }
         last_exc: Optional[Exception] = None
+        last_status: str = "no_result"
         for attempt in range(1, OSRM_MAX_RETRIES + 1):
             try:
                 resp = requests.get(url, params=params, timeout=self.timeout)
@@ -191,50 +229,57 @@ class RouteComparator:
                     if data.get("code") == "Ok" and data.get("routes"):
                         result = data["routes"][0]
                         self._cache_put(key, result)
-                        return result
+                        return result, "ok"
                     elif resp.status_code == 429 or 500 <= resp.status_code < 600:
+                        last_status = "network"
                         raise RuntimeError(f"HTTP {resp.status_code}")
                     else:
-                        return None
+                        last_status = "no_result"
+                else:
+                    last_status = "no_result"
             except requests.RequestException as e:
                 last_exc = e
+                last_status = "network"
             except Exception as e:
                 last_exc = e
+                last_status = "network"
             if attempt < OSRM_MAX_RETRIES:
                 time.sleep(OSRM_RETRY_DELAY * attempt)
 
         if last_exc:
             console.print(f"[yellow]OSRM请求失败(已重试{OSRM_MAX_RETRIES}次): {last_exc}[/yellow]")
-        return None
+        return None, last_status
 
     def compare_segment(self, segment: TripSegment) -> RouteComparison:
         actual_km = segment.moving_distance_km if segment.moving_distance_km > 0 else segment.total_distance_km
 
-        fallback_unknown = RouteComparison(
-            segment_id=segment.segment_id,
-            actual_distance_km=actual_km,
-            recommended_distance_km=0.0,
-            deviation_percent=0.0,
-            is_detour=False,
-            recommended_route_polyline=None,
-            verified=False,
-        )
+        def _fallback(reason: str) -> RouteComparison:
+            return RouteComparison(
+                segment_id=segment.segment_id,
+                actual_distance_km=actual_km,
+                recommended_distance_km=0.0,
+                deviation_percent=0.0,
+                is_detour=False,
+                recommended_route_polyline=None,
+                verified=False,
+                unverified_reason=reason,
+            )
 
         if len(segment.points) < 2:
-            return fallback_unknown
+            return _fallback("no_result")
 
         start = segment.points[0].coord
         end = segment.points[-1].coord
 
-        route_info = self._query_route([start, end])
-        if not route_info:
-            return fallback_unknown
+        route_info, status = self._query_route([start, end])
+        if not route_info or status != "ok":
+            return _fallback(status if status in ("network", "no_result") else "no_result")
 
         recommended_distance_m = route_info.get("distance", 0.0)
         recommended_km = recommended_distance_m / 1000.0
 
         if recommended_km <= 0:
-            return fallback_unknown
+            return _fallback("no_result")
 
         deviation = (actual_km - recommended_km) / recommended_km
         is_detour = deviation > ROUTE_DEVIATION_THRESHOLD
@@ -248,6 +293,7 @@ class RouteComparator:
             is_detour=is_detour,
             recommended_route_polyline=polyline_str,
             verified=True,
+            unverified_reason="",
         )
 
     def compare_trip(self, result: TripResult) -> List[RouteComparison]:
@@ -303,6 +349,7 @@ class Reporter:
         emp = employee_name or trip.employee_name
         seg_reports: List[SegmentReport] = []
         all_stays: List[StayPoint] = []
+        trip_source = Path(trip.file_path).stem if trip.file_path else f"trip_{id(trip)}"
 
         for seg in trip.segments:
             date_str = seg.start_time.strftime("%Y-%m-%d") if seg.start_time else "N/A"
@@ -314,6 +361,21 @@ class Reporter:
             status, warn = self._check_compliance(seg, threshold_km=threshold)
             moving_dur = seg.moving_time
             avg_speed = seg.avg_speed_kmh
+
+            rc = route_comps.get(seg.segment_id)
+            if not check_route and rc is None:
+                actual_km = seg.moving_distance_km if seg.moving_distance_km > 0 else seg.total_distance_km
+                rc = RouteComparison(
+                    segment_id=seg.segment_id,
+                    actual_distance_km=actual_km,
+                    recommended_distance_km=0.0,
+                    deviation_percent=0.0,
+                    is_detour=False,
+                    recommended_route_polyline=None,
+                    verified=False,
+                    unverified_reason="manual",
+                )
+
             r = SegmentReport(
                 segment=seg,
                 date=date_str,
@@ -322,11 +384,12 @@ class Reporter:
                 distance_km=seg.moving_distance_km if seg.moving_distance_km > 0 else seg.total_distance_km,
                 duration=moving_dur,
                 avg_speed_kmh=avg_speed,
-                route_check=route_comps.get(seg.segment_id),
+                route_check=rc,
                 compliance_status=status,
                 compliance_warning=warn,
                 reimbursement=reimbursement,
                 policy_name=reimbursement.policy_name if reimbursement else "default",
+                trip_source_id=trip_source,
             )
             seg_reports.append(r)
             all_stays.extend(seg.stay_points)
@@ -354,6 +417,14 @@ class Reporter:
         policy_name = "default"
         price_per_km = 1.5
         approval_threshold_km = None
+        # 新增统计
+        direct_list: List[str] = []
+        supervisor_list: List[str] = []
+        finance_list: List[str] = []
+        unverified_list: List[str] = []
+        unverified_count = 0
+        unverified_breakdown: Dict[str, int] = {}
+        policy_breakdown: Dict[str, Dict] = {}
 
         for trip in trips:
             emp = employee_name or trip.employee_name
@@ -374,20 +445,46 @@ class Reporter:
                 if seg.end_time:
                     last_time = max(last_time, seg.end_time) if last_time else seg.end_time
 
-        for sr in all_seg_reports:
+        for seg_idx, sr in enumerate(all_seg_reports, 1):
+            seg_label = f"{sr.date} 第{seg_idx}段 ({sr.distance_km:.1f}km)"
+            seg_label_short = f"{sr.date} 第{seg_idx}段"
+
             if sr.compliance_warning:
                 violations.append(
-                    f"{sr.date} 第{sr.segment.segment_id + 1}段行程 {sr.distance_km:.1f}km 超出审批标准"
+                    f"{seg_label} 超出审批标准"
                 )
             if sr.reimbursement:
                 total_reimburse += sr.reimbursement.amount
-                if sr.reimbursement.needs_approval:
-                    for reason in sr.reimbursement.approval_reasons:
-                        approval_list.append(
-                            f"{sr.date} 第{sr.segment.segment_id + 1}段 ({sr.distance_km:.1f}km): {reason}"
-                        )
-                policy_name = sr.policy_name
-                price_per_km = sr.reimbursement.price_per_km
+                # 审批流分类
+                rb = sr.reimbursement
+                amount_str = f"{rb.amount:.2f}元 · 政策[{sr.policy_name}]"
+                if rb.needs_approval:
+                    for reason in rb.approval_reasons:
+                        approval_list.append(f"{seg_label}: {reason}")
+                    if rb.approval_stage == "supervisor":
+                        supervisor_list.append(f"{seg_label} · {amount_str} · {'；'.join(rb.approval_reasons)}")
+                    elif rb.approval_stage == "finance":
+                        finance_list.append(f"{seg_label} · {amount_str} · {'；'.join(rb.approval_reasons)}")
+                else:
+                    direct_list.append(f"{seg_label} · {amount_str}")
+                # 政策汇总
+                pname = sr.policy_name
+                if pname not in policy_breakdown:
+                    policy_breakdown[pname] = {"count": 0, "distance": 0.0, "amount": 0.0, "price_per_km": rb.price_per_km}
+                policy_breakdown[pname]["count"] += 1
+                policy_breakdown[pname]["distance"] += sr.distance_km
+                policy_breakdown[pname]["amount"] += rb.amount
+                # 保留首个非默认政策作为展示
+                if pname != "default":
+                    policy_name = pname
+                    price_per_km = rb.price_per_km
+
+            # 未核验统计
+            if sr.is_unverified:
+                unverified_count += 1
+                reason = sr.unverified_reason_display
+                unverified_breakdown[reason] = unverified_breakdown.get(reason, 0) + 1
+                unverified_list.append(f"{seg_label_short} · 原因: {reason}")
 
         name = employee_name or (trips[0].employee_name if trips else "未知员工")
         date_range = ""
@@ -400,6 +497,11 @@ class Reporter:
                 approval_threshold_km = pol.approval_threshold_km
 
         total_duration = (last_time - first_time) if (first_time and last_time) else timedelta(0)
+
+        # 格式化政策汇总
+        for pname in policy_breakdown:
+            policy_breakdown[pname]["amount"] = round(policy_breakdown[pname]["amount"], 2)
+            policy_breakdown[pname]["distance"] = round(policy_breakdown[pname]["distance"], 2)
 
         return FullReport(
             employee_name=name,
@@ -418,6 +520,13 @@ class Reporter:
             policy_name=policy_name,
             price_per_km=price_per_km,
             approval_threshold_km=approval_threshold_km,
+            direct_reimburse=direct_list,
+            supervisor_approval=supervisor_list,
+            finance_review=finance_list,
+            unverified_segments=unverified_list,
+            unverified_count=unverified_count,
+            unverified_breakdown=unverified_breakdown,
+            policy_breakdown=policy_breakdown,
         )
 
     def render_markdown(self, report: FullReport) -> str:
@@ -460,26 +569,33 @@ class Reporter:
                 rec_dist = f"{sr.route_check.recommended_distance_km:.2f}"
                 dev_pct = f"{sr.route_check.deviation_percent:.1f}"
                 route_status = sr.route_check.status_label
+                unverified_reason = ""
             elif sr.route_check and not sr.route_check.verified:
                 rec_dist = ""
                 dev_pct = ""
-                route_status = "未核验(网络不可用)"
+                route_status = "未核验"
+                unverified_reason = sr.route_check.unverified_reason_display
             else:
                 rec_dist = ""
                 dev_pct = ""
-                route_status = ""
+                route_status = "未核验"
+                unverified_reason = sr.unverified_reason_display
 
             reimburse_amount = ""
             price_per_km = ""
             is_night = ""
             approval_reasons = ""
+            approval_stage = ""
             wl_start = ""
             wl_end = ""
+            policy_name = sr.policy_name
             if sr.reimbursement:
                 reimburse_amount = f"{sr.reimbursement.amount:.2f}"
                 price_per_km = f"{sr.reimbursement.price_per_km:.2f}"
                 is_night = "是" if sr.reimbursement.is_night else "否"
                 approval_reasons = "; ".join(sr.reimbursement.approval_reasons)
+                stage_map = {"direct": "可直接报销", "supervisor": "待主管审批", "finance": "待财务复核"}
+                approval_stage = stage_map.get(sr.reimbursement.approval_stage, "")
                 wl_start = sr.reimbursement.whitelist_start or ""
                 wl_end = sr.reimbursement.whitelist_end or ""
 
@@ -499,6 +615,9 @@ class Reporter:
                 "最短路线(km)": rec_dist,
                 "偏差(%)": dev_pct,
                 "路线状态": route_status,
+                "未核验原因": unverified_reason,
+                "报销政策": policy_name,
+                "审批状态": approval_stage,
                 "可报销金额(元)": reimburse_amount,
                 "单价(元/km)": price_per_km,
                 "夜间出行": is_night,
@@ -564,14 +683,18 @@ class Reporter:
             "#1abc9c", "#e67e22", "#34495e", "#d35400", "#27ae60",
         ]
 
-        route_map: Dict[int, RouteComparison] = {}
+        route_map: Dict[Tuple[str, int], RouteComparison] = {}
+        trip_id_map: Dict[Tuple[str, int], int] = {}
         if report:
-            for sr in report.segments:
+            for idx, sr in enumerate(report.segments):
                 if sr.route_check:
-                    route_map[sr.segment.segment_id] = sr.route_check
+                    key = (sr.trip_source_id, sr.segment.segment_id)
+                    route_map[key] = sr.route_check
+                    trip_id_map[key] = idx
 
         seg_global_idx = 0
         for trip in trips:
+            trip_source = Path(trip.file_path).stem if trip.file_path else f"trip_{id(trip)}"
             for seg in trip.segments:
                 color = colors[seg_global_idx % len(colors)]
                 seg_global_idx += 1
@@ -589,19 +712,21 @@ class Reporter:
                     sampled = seg.points
                 latlons = [[p.latitude, p.longitude] for p in sampled]
                 seg_display_km = seg.moving_distance_km if seg.moving_distance_km > 0 else seg.total_distance_km
+
+                display_seg_num = trip_id_map.get((trip_source, seg.segment_id), seg.segment_id) + 1
                 folium.PolyLine(
                     locations=latlons,
                     color=color,
                     weight=4,
                     opacity=0.85,
-                    tooltip=f"第{seg.segment_id + 1}段 · {seg_display_km:.1f}km · 行驶{_format_timedelta(seg.moving_time)}",
+                    tooltip=f"第{display_seg_num}段 · {seg_display_km:.1f}km · 行驶{_format_timedelta(seg.moving_time)}",
                 ).add_to(m)
 
                 sp = seg.points[0]
                 folium.Marker(
                     location=[sp.latitude, sp.longitude],
                     icon=folium.Icon(color="green", icon="play"),
-                    popup=f"起点<br>时间: {sp.time.strftime('%H:%M:%S')}<br>第{seg.segment_id + 1}段",
+                    popup=f"起点<br>时间: {sp.time.strftime('%H:%M:%S')}<br>第{display_seg_num}段",
                 ).add_to(m)
 
                 ep = seg.points[-1]
@@ -611,7 +736,7 @@ class Reporter:
                     popup=f"终点<br>时间: {ep.time.strftime('%H:%M:%S')}<br>里程: {seg.total_distance_km:.2f}km",
                 ).add_to(m)
 
-                rc = route_map.get(seg.segment_id)
+                rc = route_map.get((trip_source, seg.segment_id))
                 if rc and rc.verified and rc.recommended_route_polyline:
                     try:
                         import polyline as polyline_lib
@@ -625,7 +750,7 @@ class Reporter:
                                 weight=3,
                                 opacity=0.6,
                                 dash_array="8, 8",
-                                tooltip=f"推荐路线 {rc.recommended_distance_km:.1f}km · 偏差{rc.deviation_percent:.1f}%",
+                                tooltip=f"推荐路线(第{display_seg_num}段) {rc.recommended_distance_km:.1f}km · 偏差{rc.deviation_percent:.1f}%",
                             ).add_to(m)
                     except Exception:
                         pass
@@ -800,14 +925,23 @@ _FALLBACK_MD_TEMPLATE = """# {{ report.report_title }}
 **日期范围**: {{ report.date_range }}
 {% endif %}
 **生成时间**: {{ report.generated_at }}
+{% if report.policy_name %}
+**报销政策**: {{ report.policy_name }}
+{% endif %}
+{% if report.price_per_km is not none and report.price_per_km > 0 %}
+**参考单价**: {{ "%.2f"|format(report.price_per_km) }} 元/km
+{% endif %}
+{% if report.approval_threshold_km is not none %}
+**审批阈值**: 单段 > {{ "%.1f"|format(report.approval_threshold_km) }} km
+{% endif %}
 
 ---
 
 ## 📊 行程总览
 
-| 序号 | 日期 | 起点 | 终点 | 里程(km) | 时长 | 平均速度(km/h) | 推荐路线(km) | 偏差(%) | 路线 | 合规 |
-|------|------|------|------|----------|------|----------------|--------------|---------|------|------|
-{% for s in report.segments %}| {{ loop.index }} | {{ s.date }} | {{ s.start_coord_label }} | {{ s.end_coord_label }} | {{ "%.2f"|format(s.distance_km) }} | {{ s.duration | format_td }} | {{ "%.1f"|format(s.avg_speed_kmh) }} | {% if s.route_check %}{{ "%.2f"|format(s.route_check.recommended_distance_km) }}{% else %}-{% endif %} | {% if s.route_check %}{{ "%.1f"|format(s.route_check.deviation_percent) }}{% else %}-{% endif %} | {% if s.route_check %}{{ s.route_check.status_label }}{% else %}-{% endif %} | {{ s.compliance_status }} |
+| 序号 | 日期 | 起点 | 终点 | 里程(km) | 行驶时长 | 均速(km/h) | 推荐路线(km) | 偏差(%) | 路线 | 政策 | 报销(元) | 夜间 | 审批 | 合规 |
+|------|------|------|------|----------|----------|------------|--------------|---------|------|------|----------|------|------|------|
+{% for s in report.segments %}| {{ loop.index }} | {{ s.date }} | {{ s.start_coord_label }} | {{ s.end_coord_label }} | {{ "%.2f"|format(s.distance_km) }} | {{ s.duration | format_td }} | {{ "%.1f"|format(s.avg_speed_kmh) }} | {{ s.rec_distance_display }} | {{ s.deviation_display }} | {{ s.route_status_display }} | {{ s.policy_name }} | {% if s.reimbursement %}{{ "%.2f"|format(s.reimbursement.amount) }}{% else %}-{% endif %} | {% if s.reimbursement %}{{ '是' if s.reimbursement.is_night else '否' }}{% else %}-{% endif %} | {% if s.reimbursement %}{{ '主管' if s.reimbursement.approval_stage == 'supervisor' else ('财务' if s.reimbursement.approval_stage == 'finance' else '直接') }}{% else %}-{% endif %} | {{ s.compliance_status }} |
 {% endfor %}
 
 ---
@@ -817,14 +951,65 @@ _FALLBACK_MD_TEMPLATE = """# {{ report.report_title }}
 - **行程段数**: {{ report.segments|length }} 段
 - **停留/办事次数**: {{ report.stay_points|length }} 次
 - **总里程**: **{{ "%.2f"|format(report.total_distance_km) }} km**
-- **总时长**: {{ report.total_duration | format_td }}
 - **行驶时长**: {{ report.total_moving_time | format_td }}
 - **最大单段里程**: {{ "%.2f"|format(report.max_single_segment_km) }} km
-- **审批阈值**: 单段 > {{ COMPLIANCE_LIMIT }} km 需提前审批
+- **可报销总额**: **{{ "%.2f"|format(report.total_reimbursement_amount) }} 元**
+{% if report.unverified_count > 0 %}
+- **未核验段数**: {{ report.unverified_count }} 段
+{% for reason, cnt in report.unverified_breakdown.items() %}  - {{ reason }}: {{ cnt }} 段
+{% endfor %}
+{% endif %}
+
+{% if report.policy_breakdown %}
+### 📋 政策使用汇总
+
+| 政策名 | 段数 | 里程(km) | 金额(元) | 单价(元/km) |
+|--------|------|----------|----------|-------------|
+{% for pname, info in report.policy_breakdown.items() %}| {{ pname }} | {{ info.count }} | {{ "%.2f"|format(info.distance) }} | {{ "%.2f"|format(info.amount) }} | {{ "%.2f"|format(info.price_per_km) }} |
+{% endfor %}
+{% endif %}
+
+{% if report.direct_reimburse or report.supervisor_approval or report.finance_review %}
+---
+
+## 💰 报销审批清单
+
+{% if report.direct_reimburse %}
+### ✅ 可直接报销 ({{ report.direct_reimburse|length }} 段)
+{% for item in report.direct_reimburse %}
+- {{ item }}
+{% endfor %}
+{% endif %}
+
+{% if report.finance_review %}
+### 📋 待财务复核 ({{ report.finance_review|length }} 段)
+{% for item in report.finance_review %}
+- {{ item }}
+{% endfor %}
+{% endif %}
+
+{% if report.supervisor_approval %}
+### 🔴 待主管审批 ({{ report.supervisor_approval|length }} 段)
+{% for item in report.supervisor_approval %}
+- {{ item }}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+{% if report.unverified_segments %}
+---
+
+## ⚠️ 未核验段清单 ({{ report.unverified_count }} 段)
+
+{% for item in report.unverified_segments %}
+- {{ item }}
+{% endfor %}
+{% endif %}
 
 {% if report.compliance_violations %}
-## ⚠️ 合规警告
+---
 
+## 🚨 里程超限 ({{ report.compliance_violations|length }} 项)
 {% for v in report.compliance_violations %}
 - {{ v }}
 {% endfor %}
@@ -835,19 +1020,31 @@ _FALLBACK_MD_TEMPLATE = """# {{ report.report_title }}
 ## 🔍 各段行程详情
 
 {% for s in report.segments %}
-### 第 {{ loop.index }} 段 · {{ s.date }}
+### 第 {{ loop.index }} 段 · {{ s.date }} · 政策[{{ s.policy_name }}]
 
-- **起点**: {{ s.start_coord_label }}
-- **终点**: {{ s.end_coord_label }}
+- **起点**: {{ s.start_coord_label }}{% if s.reimbursement and s.reimbursement.whitelist_start %} ({{ s.reimbursement.whitelist_start }}){% endif %}
+- **终点**: {{ s.end_coord_label }}{% if s.reimbursement and s.reimbursement.whitelist_end %} ({{ s.reimbursement.whitelist_end }}){% endif %}
 - **起止时间**: {{ s.segment.start_time.strftime('%H:%M:%S') if s.segment.start_time else 'N/A' }} ~ {{ s.segment.end_time.strftime('%H:%M:%S') if s.segment.end_time else 'N/A' }}
 - **实际里程**: {{ "%.2f"|format(s.distance_km) }} km
 - **行驶时长**: {{ s.duration | format_td }}
 - **平均速度**: {{ "%.1f"|format(s.avg_speed_kmh) }} km/h
-{% if s.route_check %}
+{% if s.is_unverified %}
+- **路线核验**: ⚠️ 未核验 · 原因: {{ s.unverified_reason_display }}
+{% else %}
+{% if s.route_check and s.route_check.verified %}
 - **推荐最短路线**: {{ "%.2f"|format(s.route_check.recommended_distance_km) }} km
 - **路线偏差**: {{ "%.1f"|format(s.route_check.deviation_percent) }} % {{ '⚠️ 疑似绕路' if s.route_check.is_detour else '✓ 正常' }}
 {% endif %}
+{% endif %}
 - **合规状态**: {{ s.compliance_status }}
+{% if s.reimbursement %}
+- **报销政策**: {{ s.reimbursement.policy_name }}
+- **可报销金额**: {{ "%.2f"|format(s.reimbursement.amount) }} 元 (单价 {{ "%.2f"|format(s.reimbursement.price_per_km) }} 元/km{% if s.reimbursement.is_night %}, 夜间×{{ "%.1f"|format(s.reimbursement.night_multiplier) }}{% endif %})
+- **审批状态**: {{ '待主管审批' if s.reimbursement.approval_stage == 'supervisor' else ('待财务复核' if s.reimbursement.approval_stage == 'finance' else '可直接报销') }}
+{% if s.reimbursement.approval_reasons %}
+- **需审批原因**: {{ s.reimbursement.approval_reasons | join('；') }}
+{% endif %}
+{% endif %}
 
 {% if s.segment.stay_points %}
 #### 停留/办事点
@@ -874,7 +1071,7 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
 <style>
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "PingFang SC", sans-serif;
-    max-width: 1100px;
+    max-width: 1300px;
     margin: 0 auto;
     padding: 28px 32px;
     color: #2c3e50;
@@ -884,6 +1081,7 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
   h1 { color: #2980b9; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
   h2 { color: #27ae60; margin-top: 28px; border-left: 5px solid #27ae60; padding-left: 10px; }
   h3 { color: #8e44ad; }
+  h4 { color: #2980b9; margin-top: 14px; }
   .header-info {
     background: #fff;
     padding: 16px 24px;
@@ -905,23 +1103,23 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
     box-shadow: 0 1px 4px rgba(0,0,0,0.06);
   }
   th, td {
-    padding: 10px 12px;
+    padding: 10px 10px;
     text-align: left;
     border-bottom: 1px solid #ecf0f1;
-    font-size: 14px;
+    font-size: 13px;
   }
-  th { background: linear-gradient(to bottom, #3498db, #2980b9); color: #fff; font-weight: 600; }
+  th { background: linear-gradient(to bottom, #3498db, #2980b9); color: #fff; font-weight: 600; white-space: nowrap; }
   tr:hover td { background: #f8fbff; }
   tr:last-child td { border-bottom: none; }
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 12px;
     margin: 14px 0;
   }
   .stat-card {
     background: #fff;
-    padding: 14px 18px;
+    padding: 14px 16px;
     border-radius: 8px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.06);
     border-top: 3px solid #3498db;
@@ -931,6 +1129,11 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
   .warn { background: #fff8e1 !important; color: #e67e22; font-weight: 600; }
   .danger { background: #ffebee !important; color: #c0392b; font-weight: 700; }
   .ok { color: #27ae60; font-weight: 600; }
+  .muted { color: #95a5a6; }
+  .policy-tag { display:inline-block; padding:2px 8px; background:#eef2ff; color:#4f46e5; border-radius:10px; font-size:12px; font-weight:600; }
+  .tag-direct { background:#dcfce7; color:#166534; }
+  .tag-finance { background:#fef9c3; color:#854d0e; }
+  .tag-supervisor { background:#fee2e2; color:#991b1b; }
   .seg-box {
     background: #fff;
     padding: 18px 22px;
@@ -957,6 +1160,12 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
     margin: 14px 0;
   }
   .alert-danger { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+  .alert-warning { background: #fff3cd; border-color: #ffeaa7; color: #856404; }
+  .alert-success { background: #d4edda; border-color: #c3e6cb; color: #155724; }
+  .alert-info { background: #d1ecf1; border-color: #bee5eb; color: #0c5460; }
+  .list-section { margin: 8px 0; }
+  .list-section ul { margin: 8px 0 0 20px; padding: 0; }
+  .list-section li { margin: 4px 0; font-size: 14px; }
   .footer { margin-top: 40px; text-align: center; color: #95a5a6; font-size: 12px; padding: 18px; border-top: 1px solid #ecf0f1; }
 </style>
 </head>
@@ -968,7 +1177,9 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
   <div><b>员工姓名:</b> {{ report.employee_name }}</div>
   {% if report.date_range %}<div><b>日期范围:</b> {{ report.date_range }}</div>{% endif %}
   <div><b>生成时间:</b> {{ report.generated_at }}</div>
-  <div><b>审批阈值:</b> 单段 > {{ COMPLIANCE_LIMIT }} km</div>
+  {% if report.policy_name %}<div><b>报销政策:</b> {{ report.policy_name }}</div>{% endif %}
+  {% if report.price_per_km is not none %}<div><b>参考单价:</b> {{ "%.2f"|format(report.price_per_km) }} 元/km</div>{% endif %}
+  {% if report.approval_threshold_km is not none %}<div><b>审批阈值:</b> 单段 > {{ "%.1f"|format(report.approval_threshold_km) }} km</div>{% endif %}
 </div>
 
 <h2>📊 行程总览表</h2>
@@ -976,7 +1187,8 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
   <thead>
     <tr>
       <th>#</th><th>日期</th><th>起点</th><th>终点</th><th>里程(km)</th>
-      <th>时长</th><th>均速</th><th>推荐路线</th><th>偏差</th><th>路线</th><th>合规</th>
+      <th>行驶时长</th><th>均速</th><th>推荐</th><th>偏差</th><th>路线</th>
+      <th>政策</th><th>报销(元)</th><th>夜间</th><th>审批</th><th>合规</th>
     </tr>
   </thead>
   <tbody>
@@ -989,9 +1201,15 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
       <td><b>{{ "%.2f"|format(s.distance_km) }}</b></td>
       <td>{{ s.duration | format_td }}</td>
       <td>{{ "%.1f"|format(s.avg_speed_kmh) }} km/h</td>
-      <td>{% if s.route_check %}{{ "%.2f"|format(s.route_check.recommended_distance_km) }} km{% else %}-{% endif %}</td>
-      <td class="{% if s.route_check and s.route_check.deviation_percent > DEVIATION_THRESHOLD %}warn{% endif %}">{% if s.route_check %}{{ "%.1f"|format(s.route_check.deviation_percent) }}%{% else %}-{% endif %}</td>
-      <td class="{% if s.route_check and s.route_check.is_detour %}warn{% else %}ok{% endif %}">{% if s.route_check %}{{ s.route_check.status_label }}{% else %}-{% endif %}</td>
+      <td>{{ s.rec_distance_display }}</td>
+      <td class="{% if s.route_check and s.route_check.verified and s.route_check.deviation_percent > DEVIATION_THRESHOLD %}warn{% endif %}">{{ s.deviation_display }}</td>
+      <td class="{% if s.route_check and s.route_check.verified and s.route_check.is_detour %}warn{% else %}ok{% endif %}">{{ s.route_status_display }}</td>
+      <td><span class="policy-tag">{{ s.policy_name }}</span></td>
+      <td><b>{% if s.reimbursement %}{{ "%.2f"|format(s.reimbursement.amount) }}{% else %}-{% endif %}</b></td>
+      <td>{% if s.reimbursement and s.reimbursement.is_night %}<span class="warn">是</span>{% else %}否{% endif %}</td>
+      <td>{% if s.reimbursement %}<span class="policy-tag {% if s.reimbursement.approval_stage == 'supervisor' %}tag-supervisor{% elif s.reimbursement.approval_stage == 'finance' %}tag-finance{% else %}tag-direct{% endif %}">
+        {{ '主管' if s.reimbursement.approval_stage == 'supervisor' else ('财务' if s.reimbursement.approval_stage == 'finance' else '直接') }}
+      </span>{% else %}-{% endif %}</td>
       <td class="{% if s.compliance_warning %}danger{% else %}ok{% endif %}">{{ s.compliance_status }}</td>
     </tr>
   {% endfor %}
@@ -1003,18 +1221,92 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="stat-card"><div class="label">行程段数</div><div class="value">{{ report.segments|length }} 段</div></div>
   <div class="stat-card"><div class="label">停留/办事次数</div><div class="value">{{ report.stay_points|length }} 次</div></div>
   <div class="stat-card" style="border-top-color:#e74c3c;"><div class="label">总里程</div><div class="value" style="color:#c0392b;">{{ "%.2f"|format(report.total_distance_km) }} km</div></div>
-  <div class="stat-card"><div class="label">总时长</div><div class="value">{{ report.total_duration | format_td }}</div></div>
   <div class="stat-card"><div class="label">行驶时长</div><div class="value">{{ report.total_moving_time | format_td }}</div></div>
   <div class="stat-card"><div class="label">最大单段里程</div><div class="value">{{ "%.2f"|format(report.max_single_segment_km) }} km</div></div>
+  {% if report.total_reimbursement_amount is not none %}
+  <div class="stat-card" style="border-top-color:#27ae60;"><div class="label">可报销总额</div><div class="value" style="color:#27ae60;">{{ "%.2f"|format(report.total_reimbursement_amount) }} 元</div></div>
+  {% endif %}
+  {% if report.unverified_count > 0 %}
+  <div class="stat-card" style="border-top-color:#f39c12;"><div class="label">未核验段</div><div class="value" style="color:#e67e22;">{{ report.unverified_count }} 段</div></div>
+  {% endif %}
 </div>
 
-{% if report.compliance_violations %}
-<div class="alert alert-danger">
-  <b>⚠️ 合规警告 ({{ report.compliance_violations|length }} 项):</b>
-  <ul style="margin:8px 0 0 20px;">
-  {% for v in report.compliance_violations %}
-    <li>{{ v }}</li>
+{% if report.unverified_count > 0 %}
+<div class="alert alert-warning">
+  <b>⚠️ 未核验段统计:</b>
+  <ul style="margin:6px 0 0 20px;">
+  {% for reason, cnt in report.unverified_breakdown.items() %}
+    <li>{{ reason }}: {{ cnt }} 段</li>
   {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if report.policy_breakdown %}
+<h3>📋 政策使用汇总</h3>
+<table>
+  <thead>
+    <tr><th>政策名</th><th>段数</th><th>里程(km)</th><th>金额(元)</th><th>单价(元/km)</th></tr>
+  </thead>
+  <tbody>
+  {% for pname, info in report.policy_breakdown.items() %}
+    <tr>
+      <td><span class="policy-tag">{{ pname }}</span></td>
+      <td>{{ info.count }}</td>
+      <td>{{ "%.2f"|format(info.distance) }}</td>
+      <td><b>{{ "%.2f"|format(info.amount) }}</b></td>
+      <td>{{ "%.2f"|format(info.price_per_km) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if report.direct_reimburse or report.supervisor_approval or report.finance_review %}
+<h2>💰 报销审批清单</h2>
+
+{% if report.direct_reimburse %}
+<div class="alert alert-success list-section">
+  <b>✅ 可直接报销 ({{ report.direct_reimburse|length }} 段):</b>
+  <ul>
+  {% for item in report.direct_reimburse %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if report.finance_review %}
+<div class="alert alert-warning list-section">
+  <b>📋 待财务复核 ({{ report.finance_review|length }} 段):</b>
+  <ul>
+  {% for item in report.finance_review %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if report.supervisor_approval %}
+<div class="alert alert-danger list-section">
+  <b>🔴 待主管审批 ({{ report.supervisor_approval|length }} 段):</b>
+  <ul>
+  {% for item in report.supervisor_approval %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endif %}
+
+{% if report.unverified_segments %}
+<div class="alert alert-info list-section">
+  <b>⚠️ 未核验段清单 ({{ report.unverified_count }} 段):</b>
+  <ul>
+  {% for item in report.unverified_segments %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if report.compliance_violations %}
+<div class="alert alert-danger list-section">
+  <b>🚨 里程超限 ({{ report.compliance_violations|length }} 项):</b>
+  <ul>
+  {% for v in report.compliance_violations %}<li>{{ v }}</li>{% endfor %}
   </ul>
 </div>
 {% endif %}
@@ -1023,23 +1315,41 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
 
 {% for s in report.segments %}
 <div class="seg-box">
-  <h3>🚗 第 {{ loop.index }} 段 · {{ s.date }}</h3>
+  <h3>🚗 第 {{ loop.index }} 段 · {{ s.date }} · <span class="policy-tag">{{ s.policy_name }}</span></h3>
   <div class="seg-meta">
-    <div><span>起点坐标</span><b>{{ s.start_coord_label }}</b></div>
-    <div><span>终点坐标</span><b>{{ s.end_coord_label }}</b></div>
+    <div><span>起点坐标</span><b>{{ s.start_coord_label }}</b>{% if s.reimbursement and s.reimbursement.whitelist_start %} <span class="ok" style="font-size:12px;">({{ s.reimbursement.whitelist_start }})</span>{% endif %}</div>
+    <div><span>终点坐标</span><b>{{ s.end_coord_label }}</b>{% if s.reimbursement and s.reimbursement.whitelist_end %} <span class="ok" style="font-size:12px;">({{ s.reimbursement.whitelist_end }})</span>{% endif %}</div>
     <div><span>起止时间</span><b>{{ s.segment.start_time.strftime('%H:%M:%S') if s.segment.start_time else 'N/A' }} ~ {{ s.segment.end_time.strftime('%H:%M:%S') if s.segment.end_time else 'N/A' }}</b></div>
     <div><span>实际里程</span><b>{{ "%.2f"|format(s.distance_km) }} km</b></div>
     <div><span>行驶时长</span><b>{{ s.duration | format_td }}</b></div>
     <div><span>平均速度</span><b>{{ "%.1f"|format(s.avg_speed_kmh) }} km/h</b></div>
-    {% if s.route_check %}
+    {% if s.is_unverified %}
+    <div class="muted"><span>推荐最短路线</span><b>-</b></div>
+    <div class="alert" style="padding:6px 10px;"><span>路线核验</span><b>⚠️ 未核验 · 原因: {{ s.unverified_reason_display }}</b></div>
+    {% else %}
+    {% if s.route_check and s.route_check.verified %}
     <div><span>推荐最短路线</span><b>{{ "%.2f"|format(s.route_check.recommended_distance_km) }} km</b></div>
     <div class="{% if s.route_check.is_detour %}alert{% endif %}" style="{% if s.route_check.is_detour %}padding:6px 10px;{% endif %}"><span>路线偏差</span><b>{{ "%.1f"|format(s.route_check.deviation_percent) }} % {{ '⚠️ 疑似绕路' if s.route_check.is_detour else '✓ 正常' }}</b></div>
     {% endif %}
+    {% endif %}
     <div class="{% if s.compliance_warning %}alert-danger alert{% endif %}" style="{% if s.compliance_warning %}padding:6px 10px;{% endif %}"><span>合规状态</span><b>{{ s.compliance_status }}</b></div>
+    {% if s.reimbursement %}
+    <div style="background:#e8f5e9;"><span>可报销金额</span><b style="color:#2e7d32;">{{ "%.2f"|format(s.reimbursement.amount) }} 元</b></div>
+    <div><span>报销政策</span><b>{{ s.reimbursement.policy_name }}</b></div>
+    <div><span>报销单价</span><b>{{ "%.2f"|format(s.reimbursement.price_per_km) }} 元/km{% if s.reimbursement.is_night %} (夜间×{{ "%.1f"|format(s.reimbursement.night_multiplier) }}){% endif %}</b></div>
+    <div><span>审批状态</span><b>
+      <span class="policy-tag {% if s.reimbursement.approval_stage == 'supervisor' %}tag-supervisor{% elif s.reimbursement.approval_stage == 'finance' %}tag-finance{% else %}tag-direct{% endif %}">
+        {{ '待主管审批' if s.reimbursement.approval_stage == 'supervisor' else ('待财务复核' if s.reimbursement.approval_stage == 'finance' else '可直接报销') }}
+      </span>
+    </b></div>
+    {% if s.reimbursement.approval_reasons %}
+    <div class="alert" style="padding:6px 10px;"><span>需审批原因</span><b>{{ s.reimbursement.approval_reasons|join('；') }}</b></div>
+    {% endif %}
+    {% endif %}
   </div>
 
   {% if s.segment.stay_points %}
-  <h4 style="margin-top:14px;color:#3498db;">⏸️ 停留/办事点</h4>
+  <h4>⏸️ 停留/办事点</h4>
   <table>
     <thead><tr><th>#</th><th>位置坐标</th><th>到达时间</th><th>离开时间</th><th>停留时长</th></tr></thead>
     <tbody>
@@ -1059,7 +1369,7 @@ _FALLBACK_HTML_TEMPLATE = """<!DOCTYPE html>
 {% endfor %}
 
 <div class="footer">
-  本报告由 TripLog 行程管理工具自动生成 · 数据仅供报销参考 · GPS轨迹数据可能存在 ±{{ DEVIATION_THRESHOLD }}% 误差
+  本报告由 TripLog 行程管理工具自动生成 · 数据仅供报销参考 · GPS轨迹数据可能存在误差
 </div>
 </body>
 </html>

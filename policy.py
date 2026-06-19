@@ -41,15 +41,21 @@ class ReimbursementPolicy:
     night_rule: NightRule = field(default_factory=NightRule)
     whitelist: List[WhitelistLocation] = field(default_factory=list)
     applies_to_employees: List[str] = field(default_factory=list)
+    applies_to_departments: List[str] = field(default_factory=list)
     applies_to_cities: List[str] = field(default_factory=list)
     date_start: Optional[str] = None
     date_end: Optional[str] = None
 
-    def applies_to(self, employee: str, date_str: str, city: str = "") -> bool:
+    def applies_to(self, employee: str, date_str: str, city: str = "", department: str = "") -> bool:
         if self.applies_to_employees and employee not in self.applies_to_employees:
             return False
-        if self.applies_to_cities and city and city not in self.applies_to_cities:
+        if self.applies_to_departments and department not in self.applies_to_departments:
             return False
+        if self.applies_to_cities:
+            if not city:
+                return False
+            if city not in self.applies_to_cities:
+                return False
         if self.date_start and date_str < self.date_start:
             return False
         if self.date_end and date_str > self.date_end:
@@ -68,6 +74,7 @@ class SegmentReimbursement:
     whitelist_start: Optional[str] = None
     whitelist_end: Optional[str] = None
     policy_name: str = "default"
+    approval_stage: str = "direct"  # direct(直接报销) / supervisor(待主管) / finance(待财务)
 
 
 class PolicyEngine:
@@ -115,6 +122,12 @@ class PolicyEngine:
                         pol.applies_to_employees = [
                             x.strip() for x in
                             (row.get("适用员工") or row.get("employees") or "").split(";")
+                            if x.strip()
+                        ]
+                    if row.get("适用部门") or row.get("departments") or row.get("department"):
+                        pol.applies_to_departments = [
+                            x.strip() for x in
+                            (row.get("适用部门") or row.get("departments") or row.get("department") or "").split(";")
                             if x.strip()
                         ]
                     if row.get("适用城市") or row.get("cities"):
@@ -198,6 +211,7 @@ class PolicyEngine:
                     category=wl.get("category", "office"),
                 ))
             pol.applies_to_employees = entry.get("applies_to_employees", [])
+            pol.applies_to_departments = entry.get("applies_to_departments", [])
             pol.applies_to_cities = entry.get("applies_to_cities", [])
             pol.date_start = entry.get("date_start")
             pol.date_end = entry.get("date_end")
@@ -205,15 +219,17 @@ class PolicyEngine:
         if policies:
             self.policies = policies
 
-    def find_policy(self, employee: str, date_str: str, city: str = "") -> ReimbursementPolicy:
+    def find_policy(self, employee: str, date_str: str, city: str = "", department: str = "") -> ReimbursementPolicy:
         best = None
         best_score = -1
         for pol in self.policies:
-            if not pol.applies_to(employee, date_str, city):
+            if not pol.applies_to(employee, date_str, city, department):
                 continue
             score = 0
             if pol.applies_to_employees:
                 score += 10
+            if pol.applies_to_departments:
+                score += 8
             if pol.applies_to_cities:
                 score += 5
             if pol.date_start or pol.date_end:
@@ -228,11 +244,13 @@ class PolicyEngine:
         segment: TripSegment,
         employee: str,
         date_str: str = "",
+        city: str = "",
+        department: str = "",
     ) -> SegmentReimbursement:
         if not date_str and segment.start_time:
             date_str = segment.start_time.strftime("%Y-%m-%d")
 
-        policy = self.find_policy(employee, date_str)
+        policy = self.find_policy(employee, date_str, city, department)
         result = SegmentReimbursement(
             price_per_km=policy.price_per_km,
             policy_name=policy.name,
@@ -261,12 +279,21 @@ class PolicyEngine:
 
         result.amount = round(dist_km * effective_price, 2)
 
-        if dist_km > policy.approval_threshold_km:
+        threshold = policy.approval_threshold_km
+        if dist_km > threshold:
             result.needs_approval = True
-            result.approval_reasons.append(f"单段里程{dist_km:.1f}km超过{policy.approval_threshold_km:.0f}km审批阈值")
+            result.approval_stage = "supervisor"
+            result.approval_reasons.append(f"单段里程{dist_km:.1f}km超过{threshold:.0f}km审批阈值")
+        elif dist_km > threshold * 0.5:
+            result.needs_approval = True
+            result.approval_stage = "finance"
+            result.approval_reasons.append(f"单段里程{dist_km:.1f}km达到{threshold:.0f}km阈值的50%")
 
         if is_night and policy.night_rule.allowance_per_trip > 0:
             result.amount = round(result.amount + policy.night_rule.allowance_per_trip, 2)
+            if not result.needs_approval:
+                result.needs_approval = True
+                result.approval_stage = "finance"
             result.approval_reasons.append("夜间出行补贴")
 
         for wl in policy.whitelist:
@@ -276,7 +303,9 @@ class PolicyEngine:
                 result.whitelist_end = wl.name
 
         if result.whitelist_start and result.whitelist_end:
-            if not result.needs_approval:
-                pass
+            if result.needs_approval and len(result.approval_reasons) == 1 and "50%" in result.approval_reasons[0]:
+                result.needs_approval = False
+                result.approval_stage = "direct"
+                result.approval_reasons = []
 
         return result
