@@ -195,6 +195,7 @@ def parse_cmd(
             verbose=verbose, osrm_base=osrm,
             cache_dir=str(cache_dir) if cache_dir else None,
             policy_config=str(policy_config) if policy_config else None,
+            employee_resolver=resolver,
         )
         report = reporter.build_full_report([result], employee_name=emp, check_route=check_route)
 
@@ -278,6 +279,7 @@ def report_cmd(
             verbose=verbose, osrm_base=osrm,
             cache_dir=str(cache_dir) if cache_dir else None,
             policy_config=str(policy_config) if policy_config else None,
+            employee_resolver=resolver,
         )
 
         if split_by_employee and not employee_name:
@@ -373,6 +375,7 @@ def map_cmd(
             verbose=verbose, osrm_base=osrm,
             cache_dir=str(cache_dir) if cache_dir else None,
             policy_config=str(policy_config) if policy_config else None,
+            employee_resolver=resolver,
         )
 
         if split_by_employee and not employee_name:
@@ -481,6 +484,7 @@ def batch_cmd(
         reporter = Reporter(
             verbose=verbose, osrm_base=osrm, cache_dir=cache_path,
             policy_config=str(policy_config) if policy_config else None,
+            employee_resolver=resolver,
         )
 
         if employee_name:

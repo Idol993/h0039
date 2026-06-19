@@ -1,0 +1,5 @@
+﻿id,file,segment_id,time,latitude,longitude,elevation_m,speed_kmh,distance_m,is_stop,is_drift,employee
+1,zhangsan_cross_month.gpx,0,2026-07-01T09:00:00+00:00,39.9300000,116.4450000,48.0,0.00,0.00,0,0,张三
+2,zhangsan_cross_month.gpx,0,2026-07-01T09:10:00+00:00,39.9400000,116.4600000,50.0,10.18,1696.08,0,0,张三
+3,zhangsan_cross_month.gpx,0,2026-07-01T09:20:00+00:00,39.9500000,116.4750000,52.0,10.18,1695.94,0,0,张三
+4,zhangsan_cross_month.gpx,0,2026-07-01T09:30:00+00:00,39.9600000,116.4900000,55.0,10.17,1695.80,0,0,张三

@@ -75,6 +75,7 @@ class SegmentReimbursement:
     whitelist_end: Optional[str] = None
     policy_name: str = "default"
     approval_stage: str = "direct"  # direct(直接报销) / supervisor(待主管) / finance(待财务)
+    approval_threshold_km: float = 300.0
 
 
 class PolicyEngine:
@@ -254,6 +255,7 @@ class PolicyEngine:
         result = SegmentReimbursement(
             price_per_km=policy.price_per_km,
             policy_name=policy.name,
+            approval_threshold_km=policy.approval_threshold_km,
         )
 
         dist_km = segment.moving_distance_km if segment.moving_distance_km > 0 else segment.total_distance_km

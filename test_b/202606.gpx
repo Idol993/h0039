@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="TripLog Test">
+  <trk>
+    <name>Directory B - 北京周边</name>
+    <trkseg>
+      <trkpt lat="39.9042" lon="116.4074"><time>2026-06-12T10:00:00Z</time></trkpt>
+      <trkpt lat="39.9500" lon="116.4500"><time>2026-06-12T10:30:00Z</time></trkpt>
+      <trkpt lat="40.0000" lon="116.5000"><time>2026-06-12T11:00:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

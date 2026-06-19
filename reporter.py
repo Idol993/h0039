@@ -32,6 +32,68 @@ OSRM_CACHE_TTL = 86400 * 30
 
 DEFAULT_OSRM_BASE = "https://router.project-osrm.org"
 
+CITY_COORDS: Dict[str, Tuple[float, float]] = {
+    "北京": (39.9042, 116.4074),
+    "上海": (31.2304, 121.4737),
+    "广州": (23.1291, 113.2644),
+    "深圳": (22.5431, 114.0579),
+    "杭州": (30.2741, 120.1551),
+    "南京": (32.0603, 118.7969),
+    "成都": (30.5728, 104.0668),
+    "天津": (39.3434, 117.3616),
+    "重庆": (29.5630, 106.5516),
+    "武汉": (30.5928, 114.3055),
+    "西安": (34.3416, 108.9398),
+    "苏州": (31.2990, 120.5853),
+    "无锡": (31.4912, 120.3119),
+    "青岛": (36.0671, 120.3826),
+    "厦门": (24.4798, 118.0894),
+    "福州": (26.0745, 119.2965),
+    "长沙": (28.2282, 112.9388),
+    "郑州": (34.7466, 113.6254),
+    "合肥": (31.8206, 117.2272),
+    "济南": (36.6512, 117.1201),
+}
+CITY_DETECTION_RADIUS_KM = 80.0
+
+
+def detect_city(
+    start_coord: Optional[Tuple[float, float]],
+    end_coord: Optional[Tuple[float, float]],
+) -> str:
+    """根据起终点坐标判断所属城市。起终点任意一方命中且距离 < CITY_DETECTION_RADIUS_KM 即认为属于该城市，优先起点城市。"""
+    if not start_coord and not end_coord:
+        return ""
+    candidates: List[Tuple[str, float]] = []
+    for city_name, (clat, clon) in CITY_COORDS.items():
+        min_dist = float("inf")
+        for pt in (start_coord, end_coord):
+            if pt is None:
+                continue
+            try:
+                d = geodesic((pt[0], pt[1]), (clat, clon)).km
+                if d < min_dist:
+                    min_dist = d
+            except Exception:
+                continue
+        if min_dist < CITY_DETECTION_RADIUS_KM:
+            candidates.append((city_name, min_dist))
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda x: x[1])
+    return candidates[0][0]
+
+
+def make_trip_source_id(file_path: str) -> str:
+    """生成唯一的 trip_source_id，基于完整路径的 hash，避免跨目录同名文件冲突。"""
+    try:
+        full = Path(file_path).resolve(strict=False).as_posix()
+    except Exception:
+        full = str(file_path)
+    h = hashlib.md5(full.encode("utf-8")).hexdigest()[:12]
+    stem = Path(file_path).stem
+    return f"{h}_{stem}"
+
 
 @dataclass
 class RouteComparison:
@@ -230,19 +292,24 @@ class RouteComparator:
                         result = data["routes"][0]
                         self._cache_put(key, result)
                         return result, "ok"
-                    elif resp.status_code == 429 or 500 <= resp.status_code < 600:
-                        last_status = "network"
-                        raise RuntimeError(f"HTTP {resp.status_code}")
                     else:
                         last_status = "no_result"
+                elif resp.status_code == 429 or 500 <= resp.status_code < 600:
+                    last_status = "network"
+                    raise RuntimeError(f"HTTP {resp.status_code}")
                 else:
                     last_status = "no_result"
+            except requests.Timeout as e:
+                last_exc = e
+                last_status = "network"
             except requests.RequestException as e:
                 last_exc = e
                 last_status = "network"
             except Exception as e:
                 last_exc = e
-                last_status = "network"
+                # 非 requests 异常如果是我们主动抛的 RuntimeError(HTTP 429/5xx)，保持 network
+                if last_status != "network":
+                    last_status = "network"
             if attempt < OSRM_MAX_RETRIES:
                 time.sleep(OSRM_RETRY_DELAY * attempt)
 
@@ -305,10 +372,12 @@ class RouteComparator:
 
 class Reporter:
     def __init__(self, verbose: bool = False, osrm_base: str = DEFAULT_OSRM_BASE,
-                 cache_dir: Optional[str] = None, policy_config: Optional[str] = None):
+                 cache_dir: Optional[str] = None, policy_config: Optional[str] = None,
+                 employee_resolver=None):
         self.verbose = verbose
         self.route_comparator = RouteComparator(osrm_base=osrm_base, cache_dir=cache_dir)
         self.policy_engine = PolicyEngine(config_path=policy_config, verbose=verbose)
+        self.employee_resolver = employee_resolver
         self._template_env = None
 
     def _get_template_env(self) -> jinja2.Environment:
@@ -337,7 +406,8 @@ class Reporter:
         return "合规", False
 
     def build_segment_reports(
-        self, trip: TripResult, check_route: bool = True, employee_name: str = ""
+        self, trip: TripResult, check_route: bool = True, employee_name: str = "",
+        department: str = "",
     ) -> Tuple[List[SegmentReport], List[StayPoint]]:
         route_comps: Dict[int, RouteComparison] = {}
         if check_route:
@@ -349,14 +419,20 @@ class Reporter:
         emp = employee_name or trip.employee_name
         seg_reports: List[SegmentReport] = []
         all_stays: List[StayPoint] = []
-        trip_source = Path(trip.file_path).stem if trip.file_path else f"trip_{id(trip)}"
+        trip_source = make_trip_source_id(trip.file_path) if trip.file_path else f"trip_{id(trip)}"
 
         for seg in trip.segments:
             date_str = seg.start_time.strftime("%Y-%m-%d") if seg.start_time else "N/A"
+            city = detect_city(seg.start_point, seg.end_point)
             threshold = COMPLIANCE_DISTANCE_KM
-            reimbursement = self.policy_engine.compute_reimbursement(seg, emp, date_str)
+            reimbursement = self.policy_engine.compute_reimbursement(
+                seg, emp, date_str, city=city, department=department,
+            )
             if reimbursement:
-                threshold = self.policy_engine.find_policy(emp, date_str).approval_threshold_km
+                matched_pol = self.policy_engine.find_policy(
+                    emp, date_str, city=city, department=department,
+                )
+                threshold = matched_pol.approval_threshold_km
 
             status, warn = self._check_compliance(seg, threshold_km=threshold)
             moving_dur = seg.moving_time
@@ -402,6 +478,7 @@ class Reporter:
         employee_name: str = "",
         report_title: str = "员工出差行程报告",
         check_route: bool = True,
+        department: str = "",
     ) -> FullReport:
         all_seg_reports: List[SegmentReport] = []
         all_stays: List[StayPoint] = []
@@ -428,7 +505,12 @@ class Reporter:
 
         for trip in trips:
             emp = employee_name or trip.employee_name
-            seg_reports, stays = self.build_segment_reports(trip, check_route=check_route, employee_name=emp)
+            dept = department
+            if not dept and self.employee_resolver is not None and hasattr(self.employee_resolver, "resolve_department"):
+                dept = self.employee_resolver.resolve_department(emp)
+            seg_reports, stays = self.build_segment_reports(
+                trip, check_route=check_route, employee_name=emp, department=dept,
+            )
             all_seg_reports.extend(seg_reports)
             all_stays.extend(stays)
             total_dist += sum(
@@ -475,9 +557,12 @@ class Reporter:
                 policy_breakdown[pname]["distance"] += sr.distance_km
                 policy_breakdown[pname]["amount"] += rb.amount
                 # 保留首个非默认政策作为展示
-                if pname != "default":
+                if pname != "default" and policy_name == "default":
                     policy_name = pname
                     price_per_km = rb.price_per_km
+                    approval_threshold_km = rb.approval_threshold_km
+                if pname == "default" and policy_name == "default":
+                    approval_threshold_km = rb.approval_threshold_km
 
             # 未核验统计
             if sr.is_unverified:
@@ -490,11 +575,6 @@ class Reporter:
         date_range = ""
         if first_time and last_time:
             date_range = f"{first_time.strftime('%Y-%m-%d')} ~ {last_time.strftime('%Y-%m-%d')}"
-
-        if self.policy_engine and first_time:
-            pol = self.policy_engine.find_policy(name, first_time.strftime("%Y-%m-%d"))
-            if pol:
-                approval_threshold_km = pol.approval_threshold_km
 
         total_duration = (last_time - first_time) if (first_time and last_time) else timedelta(0)
 
@@ -694,7 +774,7 @@ class Reporter:
 
         seg_global_idx = 0
         for trip in trips:
-            trip_source = Path(trip.file_path).stem if trip.file_path else f"trip_{id(trip)}"
+            trip_source = make_trip_source_id(trip.file_path) if trip.file_path else f"trip_{id(trip)}"
             for seg in trip.segments:
                 color = colors[seg_global_idx % len(colors)]
                 seg_global_idx += 1

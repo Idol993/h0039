@@ -412,6 +412,7 @@ class EmployeeResolver:
         self.default_name = default_name
         self.file_to_employee: Dict[str, str] = {}
         self.aliases: Dict[str, str] = {}
+        self.employee_department: Dict[str, str] = {}
         if mapping_csv and Path(mapping_csv).exists():
             self._load_mapping(mapping_csv)
 
@@ -422,23 +423,29 @@ class EmployeeResolver:
                 alias_cols = ("别名", "alias", "nickname", "代号", "工号")
                 file_cols = ("文件名", "file", "filename", "文件名关键字", "关键字",
                              "文件", "路径", "path", "路径模式", "pattern", "匹配")
+                dept_cols = ("部门", "department", "dept", "所属部门", "员工部门")
                 for row in reader:
                     row = {k.strip(): (v.strip() if v else "") for k, v in row.items()}
                     emp = (row.get("员工姓名") or row.get("姓名") or row.get("employee")
                            or row.get("name") or row.get("emp") or "")
                     if not emp:
                         continue
+                    dept_val = ""
                     for col, val in row.items():
                         if not val:
                             continue
                         c = col.lower()
-                        if any(ac.lower() in c for ac in alias_cols):
+                        if any(dc.lower() in c for dc in dept_cols):
+                            dept_val = val
+                        elif any(ac.lower() in c for ac in alias_cols):
                             self.aliases[val.lower()] = emp
                         elif any(fc.lower() in c for fc in file_cols):
                             self.file_to_employee[Path(val).name.lower()] = emp
                             self.aliases[val.lower()] = emp
+                    if dept_val:
+                        self.employee_department[emp] = dept_val
             if self.verbose:
-                console.print(f"[dim]已加载员工映射表: {len(self.file_to_employee)} 条文件映射, {len(self.aliases)} 条别名[/dim]")
+                console.print(f"[dim]已加载员工映射表: {len(self.file_to_employee)} 条文件映射, {len(self.aliases)} 条别名, {len(self.employee_department)} 条部门[/dim]")
         except Exception as e:
             if self.verbose:
                 console.print(f"[yellow]加载员工映射CSV失败: {e}[/yellow]")
@@ -483,3 +490,9 @@ class EmployeeResolver:
             return name
 
         return default or self.default_name
+
+    def resolve_department(self, employee: str) -> str:
+        """根据员工姓名获取所属部门"""
+        if not employee:
+            return ""
+        return self.employee_department.get(employee, "")

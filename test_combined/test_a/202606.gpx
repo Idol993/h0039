@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="TripLog Test">
+  <trk>
+    <name>Directory A - 上海周边</name>
+    <trkseg>
+      <trkpt lat="31.2304" lon="121.4737"><time>2026-06-10T08:00:00Z</time></trkpt>
+      <trkpt lat="31.2900" lon="121.5000"><time>2026-06-10T08:30:00Z</time></trkpt>
+      <trkpt lat="31.3500" lon="121.5500"><time>2026-06-10T09:00:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
