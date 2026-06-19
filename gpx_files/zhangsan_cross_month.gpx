@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="TripLog Test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>跨月测试-zhangsan.gpx</name>
+  </metadata>
+  <trk>
+    <name>6月30日行程</name>
+    <trkseg>
+      <trkpt lat="39.904200" lon="116.407400"><ele>40.0</ele><time>2026-06-30T08:00:00Z</time></trkpt>
+      <trkpt lat="39.910000" lon="116.415000"><ele>42.0</ele><time>2026-06-30T08:10:00Z</time></trkpt>
+      <trkpt lat="39.920000" lon="116.430000"><ele>45.0</ele><time>2026-06-30T08:20:00Z</time></trkpt>
+      <trkpt lat="39.930000" lon="116.445000"><ele>48.0</ele><time>2026-06-30T08:30:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+  <trk>
+    <name>7月1日行程</name>
+    <trkseg>
+      <trkpt lat="39.930000" lon="116.445000"><ele>48.0</ele><time>2026-07-01T09:00:00Z</time></trkpt>
+      <trkpt lat="39.940000" lon="116.460000"><ele>50.0</ele><time>2026-07-01T09:10:00Z</time></trkpt>
+      <trkpt lat="39.950000" lon="116.475000"><ele>52.0</ele><time>2026-07-01T09:20:00Z</time></trkpt>
+      <trkpt lat="39.960000" lon="116.490000"><ele>55.0</ele><time>2026-07-01T09:30:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

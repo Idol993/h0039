@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -27,32 +27,60 @@ def _month_filter(results: List[TripResult], month: Optional[str]) -> List[TripR
     except Exception:
         raise click.BadParameter("月份格式错误，请使用 YYYY-MM 格式，例如 2026-06")
 
-    def _match(r: TripResult) -> bool:
-        for seg in r.segments:
-            if seg.start_time and (seg.start_time.year, seg.start_time.month) == target_ym:
-                return True
-        return False
-
-    return [r for r in results if _match(r)]
+    filtered: List[TripResult] = []
+    for r in results:
+        keep_segs = [
+            s for s in r.segments
+            if s.start_time and (s.start_time.year, s.start_time.month) == target_ym
+        ]
+        if not keep_segs:
+            continue
+        new_r = TripResult(
+            file_path=r.file_path,
+            employee_name=r.employee_name,
+            segments=keep_segs,
+        )
+        new_r.recompute_totals()
+        new_r.moving_time = sum((s.moving_time for s in keep_segs), start=timedelta(0))
+        filtered.append(new_r)
+    return filtered
 
 
 def _group_by_employee_and_month(
     results: List[TripResult],
 ) -> Dict[Tuple[str, str], List[TripResult]]:
     groups: Dict[Tuple[str, str], List[TripResult]] = defaultdict(list)
+    seg_buckets: Dict[Tuple[str, str], List] = defaultdict(list)
+
     for r in results:
         if not r.segments:
             continue
         emp = r.employee_name or "未知员工"
-        ym_set = set()
-        for s in r.segments:
-            if s.start_time:
-                ym_set.add(f"{s.start_time.year}-{s.start_time.month:02d}")
-        if not ym_set:
-            ym = datetime.now().strftime("%Y-%m")
-        else:
-            ym = min(ym_set)
-        groups[(emp, ym)].append(r)
+        for seg in r.segments:
+            if seg.start_time:
+                ym = f"{seg.start_time.year}-{seg.start_time.month:02d}"
+            else:
+                ym = datetime.now().strftime("%Y-%m")
+            seg_buckets[(emp, ym)].append((r, seg))
+
+    for (emp, ym), items in seg_buckets.items():
+        by_file: Dict[str, TripResult] = {}
+        for orig_result, seg in items:
+            key = orig_result.file_path + "|" + ym
+            if key not in by_file:
+                tr = TripResult(
+                    file_path=orig_result.file_path,
+                    employee_name=emp,
+                )
+                by_file[key] = tr
+            by_file[key].segments.append(seg)
+        for tr in by_file.values():
+            for idx, s in enumerate(tr.segments):
+                s.segment_id = idx
+            tr.recompute_totals()
+            tr.moving_time = sum((s.moving_time for s in tr.segments), start=timedelta(0))
+            groups[(emp, ym)].append(tr)
+
     return groups
 
 
@@ -113,6 +141,12 @@ _CACHE_OPT = click.option(
     default=None, help="OSRM路线缓存目录（默认内存缓存）",
 )
 
+_POLICY_OPT = click.option(
+    "--policy", "--policy-config", "policy_config",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None, help="报销政策配置CSV/JSON (单价、审批阈值、夜间规则、白名单)",
+)
+
 
 @cli.command("parse")
 @click.argument("gpx_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
@@ -123,6 +157,7 @@ _CACHE_OPT = click.option(
 @click.option("--check-route/--no-check-route", default=True, help="是否调用OSRM对比最短路线 (默认开启)")
 @click.option("--osrm", default=DEFAULT_OSRM, help="自定义OSRM服务地址")
 @_CACHE_OPT
+@_POLICY_OPT
 @click.option("--verbose", "-v", is_flag=True, help="显示详细日志")
 @click.option("--csv", type=click.Path(dir_okay=False, path_type=Path), help="同时导出CSV (财务用)")
 def parse_cmd(
@@ -134,6 +169,7 @@ def parse_cmd(
     check_route: bool,
     osrm: str,
     cache_dir: Optional[Path],
+    policy_config: Optional[Path],
     verbose: bool,
     csv: Optional[Path],
 ) -> None:
@@ -144,6 +180,7 @@ def parse_cmd(
     示例:
       triplog parse trip.gpx --employee "张三" -o report.md
       triplog parse trip.gpx -f html -o report.html --no-check-route
+      triplog parse trip.gpx --policy policy.csv --csv expense.csv
     """
     try:
         resolver = _make_resolver(employee_name, str(mapping_csv) if mapping_csv else None, verbose)
@@ -154,8 +191,11 @@ def parse_cmd(
         parser = TripParser(verbose=verbose)
         result = parser.parse(str(gpx_file), employee_name=emp)
 
-        reporter = Reporter(verbose=verbose, osrm_base=osrm,
-                            cache_dir=str(cache_dir) if cache_dir else None)
+        reporter = Reporter(
+            verbose=verbose, osrm_base=osrm,
+            cache_dir=str(cache_dir) if cache_dir else None,
+            policy_config=str(policy_config) if policy_config else None,
+        )
         report = reporter.build_full_report([result], employee_name=emp, check_route=check_route)
 
         _dispatch_output(reporter, report, [result], output, fmt, csv)
@@ -180,6 +220,7 @@ def parse_cmd(
 @click.option("--check-route/--no-check-route", default=True, help="是否调用OSRM对比最短路线")
 @click.option("--osrm", default=DEFAULT_OSRM, help="自定义OSRM服务地址")
 @_CACHE_OPT
+@_POLICY_OPT
 @click.option("--verbose", "-v", is_flag=True, help="显示详细日志")
 @click.option("--csv", type=click.Path(dir_okay=False, path_type=Path), help="导出报销CSV")
 @click.option("--points-csv", type=click.Path(dir_okay=False, path_type=Path), help="导出全部轨迹点CSV")
@@ -195,6 +236,7 @@ def report_cmd(
     check_route: bool,
     osrm: str,
     cache_dir: Optional[Path],
+    policy_config: Optional[Path],
     verbose: bool,
     csv: Optional[Path],
     points_csv: Optional[Path],
@@ -203,7 +245,7 @@ def report_cmd(
 
     示例:
       triplog report trip1.gpx trip2.gpx --employee "李四" -f md -o monthly.md --month 2026-06
-      triplog report -d ./gpx_files/ --split-by-employee --mapping employees.csv
+      triplog report -d ./gpx_files/ --split-by-employee --mapping employees.csv --policy policy.csv
     """
     try:
         resolver = _make_resolver(employee_name, str(mapping_csv) if mapping_csv else None, verbose)
@@ -232,15 +274,18 @@ def report_cmd(
                 console.print(f"[yellow]月份 {month} 内无任何行程数据[/yellow]")
                 sys.exit(0)
 
-        reporter = Reporter(verbose=verbose, osrm_base=osrm,
-                            cache_dir=str(cache_dir) if cache_dir else None)
+        reporter = Reporter(
+            verbose=verbose, osrm_base=osrm,
+            cache_dir=str(cache_dir) if cache_dir else None,
+            policy_config=str(policy_config) if policy_config else None,
+        )
 
         if split_by_employee and not employee_name:
             groups = _group_by_employee_and_month(results)
             if verbose:
-                console.print(f"[dim]按员工分组: {len(groups)} 组[/dim]")
+                console.print(f"[dim]按员工+月份分组: {len(groups)} 组[/dim]")
             for (emp, ym), grp in sorted(groups.items()):
-                title = f"{emp} {ym} 月度出差行程报告" if month else f"{emp} 出差行程报告"
+                title = f"{emp} {ym} 月度出差行程报告"
                 safe_emp = emp.replace(" ", "_").replace("/", "_")
                 prefix = f"{safe_emp}_{ym}"
                 rpt = reporter.build_full_report(grp, employee_name=emp, report_title=title, check_route=check_route)
@@ -279,6 +324,7 @@ def report_cmd(
 @click.option("--split-by-employee/--no-split-by-employee", default=False, help="按员工分别生成地图")
 @click.option("--osrm", default=DEFAULT_OSRM, help="自定义OSRM服务地址")
 @_CACHE_OPT
+@_POLICY_OPT
 @click.option("--verbose", "-v", is_flag=True, help="显示详细日志")
 def map_cmd(
     gpx_files: tuple,
@@ -290,6 +336,7 @@ def map_cmd(
     split_by_employee: bool,
     osrm: str,
     cache_dir: Optional[Path],
+    policy_config: Optional[Path],
     verbose: bool,
 ) -> None:
     """生成交互式轨迹可视化地图 (HTML格式，基于folium/OpenStreetMap)。
@@ -302,7 +349,7 @@ def map_cmd(
 
     示例:
       triplog map trip.gpx -o map.html
-      triplog map -d ./gpx/ --employee "赵六" --no-route
+      triplog map -d ./gpx/ --employee "赵六" --no-route --policy policy.csv
     """
     try:
         resolver = _make_resolver(employee_name, str(mapping_csv) if mapping_csv else None, verbose)
@@ -322,8 +369,11 @@ def map_cmd(
             console.print("[yellow]未找到任何有效的GPX数据[/yellow]")
             sys.exit(0)
 
-        reporter = Reporter(verbose=verbose, osrm_base=osrm,
-                            cache_dir=str(cache_dir) if cache_dir else None)
+        reporter = Reporter(
+            verbose=verbose, osrm_base=osrm,
+            cache_dir=str(cache_dir) if cache_dir else None,
+            policy_config=str(policy_config) if policy_config else None,
+        )
 
         if split_by_employee and not employee_name:
             groups = _group_by_employee_and_month(results)
@@ -367,6 +417,7 @@ def map_cmd(
               help="按员工+月份分别生成报告（默认开启，指定 -e 时关闭）")
 @click.option("--osrm", default=DEFAULT_OSRM, help="自定义OSRM服务地址")
 @_CACHE_OPT
+@_POLICY_OPT
 @click.option("--verbose", "-v", is_flag=True, help="显示详细日志")
 def batch_cmd(
     input_dir: Path,
@@ -380,6 +431,7 @@ def batch_cmd(
     split_by_employee: bool,
     osrm: str,
     cache_dir: Optional[Path],
+    policy_config: Optional[Path],
     verbose: bool,
 ) -> None:
     """批量处理目录下所有GPX文件，按员工和月份聚合生成报告。
@@ -426,7 +478,10 @@ def batch_cmd(
                 sys.exit(0)
 
         cache_path = str(cache_dir) if cache_dir else str(output_dir / ".osrm_cache")
-        reporter = Reporter(verbose=verbose, osrm_base=osrm, cache_dir=cache_path)
+        reporter = Reporter(
+            verbose=verbose, osrm_base=osrm, cache_dir=cache_path,
+            policy_config=str(policy_config) if policy_config else None,
+        )
 
         if employee_name:
             split_by_employee = False
@@ -515,6 +570,7 @@ def batch_cmd(
 @click.option("--type", "data_type", type=click.Choice(["expense", "segments", "points"]), default="expense", help="导出类型: expense报销表 / segments行程段 / points全部轨迹点 (默认: expense)")
 @click.option("--month", default="", help="仅处理指定月份 (格式: YYYY-MM)")
 @click.option("--split-by-employee/--no-split-by-employee", default=False, help="按员工分别导出CSV")
+@_POLICY_OPT
 @click.option("--verbose", "-v", is_flag=True, help="显示详细日志")
 def export_cmd(
     gpx_files: tuple,
@@ -525,6 +581,7 @@ def export_cmd(
     data_type: str,
     month: str,
     split_by_employee: bool,
+    policy_config: Optional[Path],
     verbose: bool,
 ) -> None:
     """将行程数据导出为CSV，供财务系统直接导入。
@@ -563,7 +620,10 @@ def export_cmd(
                 console.print(f"[yellow]月份 {month} 内无任何行程数据[/yellow]")
                 sys.exit(0)
 
-        reporter = Reporter(verbose=verbose)
+        reporter = Reporter(
+            verbose=verbose,
+            policy_config=str(policy_config) if policy_config else None,
+        )
 
         if split_by_employee and not employee_name:
             groups = _group_by_employee_and_month(results)

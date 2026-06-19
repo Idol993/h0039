@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.table import Table
 
 from trip_parser import StayPoint, TripResult, TripSegment
+from policy import PolicyEngine, SegmentReimbursement
 
 console = Console()
 
@@ -63,6 +64,26 @@ class SegmentReport:
     route_check: Optional[RouteComparison] = None
     compliance_status: str = "合规"
     compliance_warning: bool = False
+    reimbursement: Optional[SegmentReimbursement] = None
+    policy_name: str = "default"
+
+    @property
+    def rec_distance_display(self) -> str:
+        if not self.route_check or not self.route_check.verified:
+            return "-"
+        return f"{self.route_check.recommended_distance_km:.2f}"
+
+    @property
+    def deviation_display(self) -> str:
+        if not self.route_check or not self.route_check.verified:
+            return "-"
+        return f"{self.route_check.deviation_percent:.1f}"
+
+    @property
+    def route_status_display(self) -> str:
+        if not self.route_check:
+            return "-"
+        return self.route_check.status_label
 
 
 @dataclass
@@ -78,6 +99,11 @@ class FullReport:
     max_single_segment_km: float = 0.0
     compliance_violations: List[str] = field(default_factory=list)
     date_range: str = ""
+    total_reimbursement_amount: float = 0.0
+    approval_required: List[str] = field(default_factory=list)
+    policy_name: str = "default"
+    price_per_km: float = 1.5
+    approval_threshold_km: Optional[float] = None
 
 
 def _format_timedelta(td: timedelta) -> str:
@@ -233,9 +259,10 @@ class RouteComparator:
 
 class Reporter:
     def __init__(self, verbose: bool = False, osrm_base: str = DEFAULT_OSRM_BASE,
-                 cache_dir: Optional[str] = None):
+                 cache_dir: Optional[str] = None, policy_config: Optional[str] = None):
         self.verbose = verbose
         self.route_comparator = RouteComparator(osrm_base=osrm_base, cache_dir=cache_dir)
+        self.policy_engine = PolicyEngine(config_path=policy_config, verbose=verbose)
         self._template_env = None
 
     def _get_template_env(self) -> jinja2.Environment:
@@ -257,14 +284,14 @@ class Reporter:
             "report.html.j2": _FALLBACK_HTML_TEMPLATE,
         }
 
-    def _check_compliance(self, segment: TripSegment) -> Tuple[str, bool]:
+    def _check_compliance(self, segment: TripSegment, threshold_km: float = COMPLIANCE_DISTANCE_KM) -> Tuple[str, bool]:
         dist = segment.total_distance_km
-        if dist > COMPLIANCE_DISTANCE_KM:
-            return f"⚠️ 超过{COMPLIANCE_DISTANCE_KM:.0f}公里，需提前审批", True
+        if dist > threshold_km:
+            return f"⚠️ 超过{threshold_km:.0f}公里，需提前审批", True
         return "合规", False
 
     def build_segment_reports(
-        self, trip: TripResult, check_route: bool = True
+        self, trip: TripResult, check_route: bool = True, employee_name: str = ""
     ) -> Tuple[List[SegmentReport], List[StayPoint]]:
         route_comps: Dict[int, RouteComparison] = {}
         if check_route:
@@ -273,12 +300,18 @@ class Reporter:
             comps = self.route_comparator.compare_trip(trip)
             route_comps = {c.segment_id: c for c in comps}
 
+        emp = employee_name or trip.employee_name
         seg_reports: List[SegmentReport] = []
         all_stays: List[StayPoint] = []
 
         for seg in trip.segments:
             date_str = seg.start_time.strftime("%Y-%m-%d") if seg.start_time else "N/A"
-            status, warn = self._check_compliance(seg)
+            threshold = COMPLIANCE_DISTANCE_KM
+            reimbursement = self.policy_engine.compute_reimbursement(seg, emp, date_str)
+            if reimbursement:
+                threshold = self.policy_engine.find_policy(emp, date_str).approval_threshold_km
+
+            status, warn = self._check_compliance(seg, threshold_km=threshold)
             moving_dur = seg.moving_time
             avg_speed = seg.avg_speed_kmh
             r = SegmentReport(
@@ -292,6 +325,8 @@ class Reporter:
                 route_check=route_comps.get(seg.segment_id),
                 compliance_status=status,
                 compliance_warning=warn,
+                reimbursement=reimbursement,
+                policy_name=reimbursement.policy_name if reimbursement else "default",
             )
             seg_reports.append(r)
             all_stays.extend(seg.stay_points)
@@ -314,9 +349,15 @@ class Reporter:
         first_time: Optional[datetime] = None
         last_time: Optional[datetime] = None
         total_moving = timedelta(0)
+        total_reimburse = 0.0
+        approval_list: List[str] = []
+        policy_name = "default"
+        price_per_km = 1.5
+        approval_threshold_km = None
 
         for trip in trips:
-            seg_reports, stays = self.build_segment_reports(trip, check_route=check_route)
+            emp = employee_name or trip.employee_name
+            seg_reports, stays = self.build_segment_reports(trip, check_route=check_route, employee_name=emp)
             all_seg_reports.extend(seg_reports)
             all_stays.extend(stays)
             total_dist += sum(
@@ -338,11 +379,25 @@ class Reporter:
                 violations.append(
                     f"{sr.date} 第{sr.segment.segment_id + 1}段行程 {sr.distance_km:.1f}km 超出审批标准"
                 )
+            if sr.reimbursement:
+                total_reimburse += sr.reimbursement.amount
+                if sr.reimbursement.needs_approval:
+                    for reason in sr.reimbursement.approval_reasons:
+                        approval_list.append(
+                            f"{sr.date} 第{sr.segment.segment_id + 1}段 ({sr.distance_km:.1f}km): {reason}"
+                        )
+                policy_name = sr.policy_name
+                price_per_km = sr.reimbursement.price_per_km
 
         name = employee_name or (trips[0].employee_name if trips else "未知员工")
         date_range = ""
         if first_time and last_time:
             date_range = f"{first_time.strftime('%Y-%m-%d')} ~ {last_time.strftime('%Y-%m-%d')}"
+
+        if self.policy_engine and first_time:
+            pol = self.policy_engine.find_policy(name, first_time.strftime("%Y-%m-%d"))
+            if pol:
+                approval_threshold_km = pol.approval_threshold_km
 
         total_duration = (last_time - first_time) if (first_time and last_time) else timedelta(0)
 
@@ -358,6 +413,11 @@ class Reporter:
             max_single_segment_km=max_single,
             compliance_violations=violations,
             date_range=date_range,
+            total_reimbursement_amount=round(total_reimburse, 2),
+            approval_required=approval_list,
+            policy_name=policy_name,
+            price_per_km=price_per_km,
+            approval_threshold_km=approval_threshold_km,
         )
 
     def render_markdown(self, report: FullReport) -> str:
@@ -408,6 +468,21 @@ class Reporter:
                 rec_dist = ""
                 dev_pct = ""
                 route_status = ""
+
+            reimburse_amount = ""
+            price_per_km = ""
+            is_night = ""
+            approval_reasons = ""
+            wl_start = ""
+            wl_end = ""
+            if sr.reimbursement:
+                reimburse_amount = f"{sr.reimbursement.amount:.2f}"
+                price_per_km = f"{sr.reimbursement.price_per_km:.2f}"
+                is_night = "是" if sr.reimbursement.is_night else "否"
+                approval_reasons = "; ".join(sr.reimbursement.approval_reasons)
+                wl_start = sr.reimbursement.whitelist_start or ""
+                wl_end = sr.reimbursement.whitelist_end or ""
+
             rows.append({
                 "序号": idx + 1,
                 "日期": sr.date,
@@ -424,6 +499,12 @@ class Reporter:
                 "最短路线(km)": rec_dist,
                 "偏差(%)": dev_pct,
                 "路线状态": route_status,
+                "可报销金额(元)": reimburse_amount,
+                "单价(元/km)": price_per_km,
+                "夜间出行": is_night,
+                "需审批原因": approval_reasons,
+                "起点白名单": wl_start,
+                "终点白名单": wl_end,
                 "员工": report.employee_name,
             })
         p = Path(output_path)
@@ -531,7 +612,7 @@ class Reporter:
                 ).add_to(m)
 
                 rc = route_map.get(seg.segment_id)
-                if rc and rc.recommended_route_polyline:
+                if rc and rc.verified and rc.recommended_route_polyline:
                     try:
                         import polyline as polyline_lib
                         decoded = polyline_lib.decode(rc.recommended_route_polyline)

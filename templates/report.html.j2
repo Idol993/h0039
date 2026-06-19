@@ -7,7 +7,7 @@
 <style>
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "PingFang SC", sans-serif;
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 28px 32px;
     color: #2c3e50;
@@ -64,6 +64,7 @@
   .warn { background: #fff8e1 !important; color: #e67e22; font-weight: 600; }
   .danger { background: #ffebee !important; color: #c0392b; font-weight: 700; }
   .ok { color: #27ae60; font-weight: 600; }
+  .muted { color: #95a5a6; }
   .seg-box {
     background: #fff;
     padding: 18px 22px;
@@ -90,6 +91,7 @@
     margin: 14px 0;
   }
   .alert-danger { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+  .alert-warning { background: #fff3cd; border-color: #ffeaa7; color: #856404; }
   .footer { margin-top: 40px; text-align: center; color: #95a5a6; font-size: 12px; padding: 18px; border-top: 1px solid #ecf0f1; }
 </style>
 </head>
@@ -101,7 +103,9 @@
   <div><b>员工姓名:</b> {{ report.employee_name }}</div>
   {% if report.date_range %}<div><b>日期范围:</b> {{ report.date_range }}</div>{% endif %}
   <div><b>生成时间:</b> {{ report.generated_at }}</div>
-  <div><b>审批阈值:</b> 单段 > {{ COMPLIANCE_LIMIT }} km</div>
+  {% if report.policy_name %}<div><b>报销政策:</b> {{ report.policy_name }}</div>{% endif %}
+  {% if report.price_per_km is not none %}<div><b>单价:</b> {{ "%.2f"|format(report.price_per_km) }} 元/km</div>{% endif %}
+  {% if report.approval_threshold_km is not none %}<div><b>审批阈值:</b> 单段 > {{ "%.1f"|format(report.approval_threshold_km) }} km</div>{% endif %}
 </div>
 
 <h2>📊 行程总览表</h2>
@@ -109,7 +113,8 @@
   <thead>
     <tr>
       <th>#</th><th>日期</th><th>起点</th><th>终点</th><th>里程(km)</th>
-      <th>时长</th><th>均速</th><th>推荐路线</th><th>偏差</th><th>路线</th><th>合规</th>
+      <th>行驶时长</th><th>均速</th><th>推荐路线</th><th>偏差</th><th>路线</th>
+      <th>报销(元)</th><th>夜间</th><th>合规</th>
     </tr>
   </thead>
   <tbody>
@@ -122,9 +127,11 @@
       <td><b>{{ "%.2f"|format(s.distance_km) }}</b></td>
       <td>{{ s.duration | format_td }}</td>
       <td>{{ "%.1f"|format(s.avg_speed_kmh) }} km/h</td>
-      <td>{% if s.route_check %}{{ "%.2f"|format(s.route_check.recommended_distance_km) }} km{% else %}-{% endif %}</td>
-      <td class="{% if s.route_check and s.route_check.deviation_percent > DEVIATION_THRESHOLD %}warn{% endif %}">{% if s.route_check %}{{ "%.1f"|format(s.route_check.deviation_percent) }}%{% else %}-{% endif %}</td>
-      <td class="{% if s.route_check and s.route_check.is_detour %}warn{% else %}ok{% endif %}">{% if s.route_check %}{{ s.route_check.status_label }}{% else %}-{% endif %}</td>
+      <td>{{ s.rec_distance_display }}</td>
+      <td class="{% if s.route_check and s.route_check.verified and s.route_check.deviation_percent > DEVIATION_THRESHOLD %}warn{% endif %}">{{ s.deviation_display }}</td>
+      <td class="{% if s.route_check and s.route_check.verified and s.route_check.is_detour %}warn{% else %}ok{% endif %}">{{ s.route_status_display }}</td>
+      <td><b>{% if s.reimbursement %}{{ "%.2f"|format(s.reimbursement.amount) }}{% else %}-{% endif %}</b></td>
+      <td>{% if s.reimbursement and s.reimbursement.is_night %}<span class="warn">是</span>{% else %}否{% endif %}</td>
       <td class="{% if s.compliance_warning %}danger{% else %}ok{% endif %}">{{ s.compliance_status }}</td>
     </tr>
   {% endfor %}
@@ -136,17 +143,30 @@
   <div class="stat-card"><div class="label">行程段数</div><div class="value">{{ report.segments|length }} 段</div></div>
   <div class="stat-card"><div class="label">停留/办事次数</div><div class="value">{{ report.stay_points|length }} 次</div></div>
   <div class="stat-card" style="border-top-color:#e74c3c;"><div class="label">总里程</div><div class="value" style="color:#c0392b;">{{ "%.2f"|format(report.total_distance_km) }} km</div></div>
-  <div class="stat-card"><div class="label">总时长</div><div class="value">{{ report.total_duration | format_td }}</div></div>
   <div class="stat-card"><div class="label">行驶时长</div><div class="value">{{ report.total_moving_time | format_td }}</div></div>
   <div class="stat-card"><div class="label">最大单段里程</div><div class="value">{{ "%.2f"|format(report.max_single_segment_km) }} km</div></div>
+  {% if report.total_reimbursement_amount is not none %}
+  <div class="stat-card" style="border-top-color:#27ae60;"><div class="label">可报销总额</div><div class="value" style="color:#27ae60;">{{ "%.2f"|format(report.total_reimbursement_amount) }} 元</div></div>
+  {% endif %}
 </div>
 
 {% if report.compliance_violations %}
 <div class="alert alert-danger">
-  <b>⚠️ 合规警告 ({{ report.compliance_violations|length }} 项):</b>
+  <b>⚠️ 里程超限 ({{ report.compliance_violations|length }} 项):</b>
   <ul style="margin:8px 0 0 20px;">
   {% for v in report.compliance_violations %}
     <li>{{ v }}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if report.approval_required %}
+<div class="alert alert-warning">
+  <b>📝 需审批事项 ({{ report.approval_required|length }} 项):</b>
+  <ul style="margin:8px 0 0 20px;">
+  {% for item in report.approval_required %}
+    <li>{{ item }}</li>
   {% endfor %}
   </ul>
 </div>
@@ -158,17 +178,27 @@
 <div class="seg-box">
   <h3>🚗 第 {{ loop.index }} 段 · {{ s.date }}</h3>
   <div class="seg-meta">
-    <div><span>起点坐标</span><b>{{ s.start_coord_label }}</b></div>
-    <div><span>终点坐标</span><b>{{ s.end_coord_label }}</b></div>
+    <div><span>起点坐标</span><b>{{ s.start_coord_label }}</b>{% if s.reimbursement and s.reimbursement.whitelist_start %} <span class="ok" style="font-size:12px;">({{ s.reimbursement.whitelist_start }})</span>{% endif %}</div>
+    <div><span>终点坐标</span><b>{{ s.end_coord_label }}</b>{% if s.reimbursement and s.reimbursement.whitelist_end %} <span class="ok" style="font-size:12px;">({{ s.reimbursement.whitelist_end }})</span>{% endif %}</div>
     <div><span>起止时间</span><b>{{ s.segment.start_time.strftime('%H:%M:%S') if s.segment.start_time else 'N/A' }} ~ {{ s.segment.end_time.strftime('%H:%M:%S') if s.segment.end_time else 'N/A' }}</b></div>
     <div><span>实际里程</span><b>{{ "%.2f"|format(s.distance_km) }} km</b></div>
     <div><span>行驶时长</span><b>{{ s.duration | format_td }}</b></div>
     <div><span>平均速度</span><b>{{ "%.1f"|format(s.avg_speed_kmh) }} km/h</b></div>
-    {% if s.route_check %}
+    {% if s.route_check and s.route_check.verified %}
     <div><span>推荐最短路线</span><b>{{ "%.2f"|format(s.route_check.recommended_distance_km) }} km</b></div>
     <div class="{% if s.route_check.is_detour %}alert{% endif %}" style="{% if s.route_check.is_detour %}padding:6px 10px;{% endif %}"><span>路线偏差</span><b>{{ "%.1f"|format(s.route_check.deviation_percent) }} % {{ '⚠️ 疑似绕路' if s.route_check.is_detour else '✓ 正常' }}</b></div>
+    {% else %}
+    <div class="muted"><span>推荐最短路线</span><b>-</b></div>
+    <div class="muted"><span>路线状态</span><b>⚠️ 未核验</b></div>
     {% endif %}
     <div class="{% if s.compliance_warning %}alert-danger alert{% endif %}" style="{% if s.compliance_warning %}padding:6px 10px;{% endif %}"><span>合规状态</span><b>{{ s.compliance_status }}</b></div>
+    {% if s.reimbursement %}
+    <div style="background:#e8f5e9;"><span>可报销金额</span><b style="color:#2e7d32;">{{ "%.2f"|format(s.reimbursement.amount) }} 元</b></div>
+    <div><span>报销单价</span><b>{{ "%.2f"|format(s.reimbursement.price_per_km) }} 元/km{% if s.reimbursement.is_night %} (夜间×{{ "%.1f"|format(s.reimbursement.night_multiplier) }}){% endif %}</b></div>
+    {% if s.reimbursement.approval_reasons %}
+    <div class="alert" style="padding:6px 10px;"><span>需审批原因</span><b>{{ s.reimbursement.approval_reasons|join('；') }}</b></div>
+    {% endif %}
+    {% endif %}
   </div>
 
   {% if s.segment.stay_points %}
@@ -192,7 +222,7 @@
 {% endfor %}
 
 <div class="footer">
-  本报告由 TripLog 行程管理工具自动生成 · 数据仅供报销参考 · GPS轨迹数据可能存在 ±{{ DEVIATION_THRESHOLD }}% 误差
+  本报告由 TripLog 行程管理工具自动生成 · 数据仅供报销参考 · GPS轨迹数据可能存在误差
 </div>
 </body>
 </html>

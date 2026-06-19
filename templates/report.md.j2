@@ -5,14 +5,16 @@
 **日期范围**: {{ report.date_range }}
 {% endif %}
 **生成时间**: {{ report.generated_at }}
+**报销政策**: {{ report.policy_name }}
+**单价**: {{ "%.2f"|format(report.price_per_km) }} 元/km
 
 ---
 
 ## 📊 行程总览
 
-| 序号 | 日期 | 起点 | 终点 | 里程(km) | 时长 | 平均速度(km/h) | 推荐路线(km) | 偏差(%) | 路线 | 合规 |
-|------|------|------|------|----------|------|----------------|--------------|---------|------|------|
-{% for s in report.segments %}| {{ loop.index }} | {{ s.date }} | {{ s.start_coord_label }} | {{ s.end_coord_label }} | {{ "%.2f"|format(s.distance_km) }} | {{ s.duration | format_td }} | {{ "%.1f"|format(s.avg_speed_kmh) }} | {% if s.route_check %}{{ "%.2f"|format(s.route_check.recommended_distance_km) }}{% else %}-{% endif %} | {% if s.route_check %}{{ "%.1f"|format(s.route_check.deviation_percent) }}{% else %}-{% endif %} | {% if s.route_check %}{{ s.route_check.status_label }}{% else %}-{% endif %} | {{ s.compliance_status }} |
+| 序号 | 日期 | 起点 | 终点 | 里程(km) | 行驶时长 | 均速(km/h) | 推荐路线(km) | 偏差(%) | 路线 | 报销(元) | 夜间 | 合规 |
+|------|------|------|------|----------|----------|------------|--------------|---------|------|----------|------|------|
+{% for s in report.segments %}| {{ loop.index }} | {{ s.date }} | {{ s.start_coord_label }} | {{ s.end_coord_label }} | {{ "%.2f"|format(s.distance_km) }} | {{ s.duration | format_td }} | {{ "%.1f"|format(s.avg_speed_kmh) }} | {{ s.rec_distance_display }} | {{ s.deviation_display }} | {{ s.route_status_display }} | {% if s.reimbursement %}{{ "%.2f"|format(s.reimbursement.amount) }}{% else %}-{% endif %} | {% if s.reimbursement %}{{ '是' if s.reimbursement.is_night else '否' }}{% else %}-{% endif %} | {{ s.compliance_status }} |
 {% endfor %}
 
 ---
@@ -22,17 +24,27 @@
 - **行程段数**: {{ report.segments|length }} 段
 - **停留/办事次数**: {{ report.stay_points|length }} 次
 - **总里程**: **{{ "%.2f"|format(report.total_distance_km) }} km**
-- **总时长**: {{ report.total_duration | format_td }}
 - **行驶时长**: {{ report.total_moving_time | format_td }}
 - **最大单段里程**: {{ "%.2f"|format(report.max_single_segment_km) }} km
+- **可报销总额**: **{{ "%.2f"|format(report.total_reimbursement_amount) }} 元**
 - **审批阈值**: 单段 > {{ COMPLIANCE_LIMIT }} km 需提前审批
 
-{% if report.compliance_violations %}
-## ⚠️ 合规警告
+{% if report.compliance_violations or report.approval_required %}
+## ⚠️ 审批/合规提醒
 
+{% if report.compliance_violations %}
+### 里程超限
 {% for v in report.compliance_violations %}
 - {{ v }}
 {% endfor %}
+{% endif %}
+
+{% if report.approval_required %}
+### 需审批事项
+{% for v in report.approval_required %}
+- {{ v }}
+{% endfor %}
+{% endif %}
 {% endif %}
 
 ---
@@ -42,17 +54,25 @@
 {% for s in report.segments %}
 ### 第 {{ loop.index }} 段 · {{ s.date }}
 
-- **起点**: {{ s.start_coord_label }}
-- **终点**: {{ s.end_coord_label }}
+- **起点**: {{ s.start_coord_label }}{% if s.reimbursement and s.reimbursement.whitelist_start %} ({{ s.reimbursement.whitelist_start }}){% endif %}
+- **终点**: {{ s.end_coord_label }}{% if s.reimbursement and s.reimbursement.whitelist_end %} ({{ s.reimbursement.whitelist_end }}){% endif %}
 - **起止时间**: {{ s.segment.start_time.strftime('%H:%M:%S') if s.segment.start_time else 'N/A' }} ~ {{ s.segment.end_time.strftime('%H:%M:%S') if s.segment.end_time else 'N/A' }}
 - **实际里程**: {{ "%.2f"|format(s.distance_km) }} km
 - **行驶时长**: {{ s.duration | format_td }}
 - **平均速度**: {{ "%.1f"|format(s.avg_speed_kmh) }} km/h
-{% if s.route_check %}
+{% if s.route_check and s.route_check.verified %}
 - **推荐最短路线**: {{ "%.2f"|format(s.route_check.recommended_distance_km) }} km
 - **路线偏差**: {{ "%.1f"|format(s.route_check.deviation_percent) }} % {{ '⚠️ 疑似绕路' if s.route_check.is_detour else '✓ 正常' }}
+{% elif s.route_check and not s.route_check.verified %}
+- **路线核验**: ⚠️ 未核验 (网络不可用)
 {% endif %}
 - **合规状态**: {{ s.compliance_status }}
+{% if s.reimbursement %}
+- **可报销金额**: {{ "%.2f"|format(s.reimbursement.amount) }} 元 (单价 {{ "%.2f"|format(s.reimbursement.price_per_km) }} 元/km{% if s.reimbursement.is_night %}, 夜间x{{ s.reimbursement.night_multiplier }}{% endif %})
+{% if s.reimbursement.approval_reasons %}
+- **需审批原因**: {{ s.reimbursement.approval_reasons | join('; ') }}
+{% endif %}
+{% endif %}
 
 {% if s.segment.stay_points %}
 #### 停留/办事点
